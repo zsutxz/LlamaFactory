@@ -2932,8 +2932,8 @@ register_model_group(
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-30B-A3B-Base",
         },
         "Qwen3-0.6B-Thinking": {
-            DownloadSource.DEFAULT: "Qwen/Qwen3-0.6B",
-            DownloadSource.MODELSCOPE: "Qwen/Qwen3-0.6B",
+            DownloadSource.DEFAULT: "data/qwen3_0.6B",
+            DownloadSource.MODELSCOPE: "data/qwen3_0.6B",
         },
         "Qwen3-1.7B-Thinking": {
             DownloadSource.DEFAULT: "Qwen/Qwen3-1.7B",

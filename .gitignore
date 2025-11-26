@@ -177,3 +177,5 @@ wandb/
 swanlog/
 generated_predictions.jsonl
 predictions_score.json
+model/qwen3-4B/
+model/qwen3_0.6B/model.safetensors

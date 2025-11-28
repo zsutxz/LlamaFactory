@@ -179,3 +179,13 @@ generated_predictions.jsonl
 predictions_score.json
 model/qwen3-4B/
 model/qwen3_0.6B/model.safetensors
+
+# Ignore large model directories
+model/Qwen3-8B/
+model/qwen3-1.7B/
+
+# Ignore files larger than 100MB (use git-lfs for large files if needed)
+*.safetensors
+*.bin
+*.pth
+*.pt

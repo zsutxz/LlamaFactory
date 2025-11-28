@@ -2932,24 +2932,24 @@ register_model_group(
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-30B-A3B-Base",
         },
         "Qwen3-0.6B-Thinking": {
-            DownloadSource.DEFAULT: "data/qwen3_0.6B",
-            DownloadSource.MODELSCOPE: "data/qwen3_0.6B",
+            DownloadSource.DEFAULT: "model/qwen3_0.6B",
+            DownloadSource.MODELSCOPE: "model/qwen3_0.6B",
         },
         "Qwen3-1.7B-Thinking": {
-            DownloadSource.DEFAULT: "Qwen/Qwen3-1.7B",
-            DownloadSource.MODELSCOPE: "Qwen/Qwen3-1.7B",
+            DownloadSource.DEFAULT: "model/Qwen3-1.7B",
+            DownloadSource.MODELSCOPE: "model/Qwen3-1.7B",
         },
         "Qwen3-4B-Thinking": {
-            DownloadSource.DEFAULT: "Qwen/Qwen3-4B",
-            DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B",
+            DownloadSource.DEFAULT: "model/Qwen3-4B",
+            DownloadSource.MODELSCOPE: "model/Qwen3-4B",
         },
         "Qwen3-4B-Thinking-2507": {
             DownloadSource.DEFAULT: "Qwen/Qwen3-4B-Thinking-2507",
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B-Thinking-2507",
         },
         "Qwen3-8B-Thinking": {
-            DownloadSource.DEFAULT: "Qwen/Qwen3-8B",
-            DownloadSource.MODELSCOPE: "Qwen/Qwen3-8B",
+            DownloadSource.DEFAULT: "model/Qwen3-8B",
+            DownloadSource.MODELSCOPE: "model/Qwen3-8B",
         },
         "Qwen3-14B-Thinking": {
             DownloadSource.DEFAULT: "Qwen/Qwen3-14B",

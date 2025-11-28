@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from io import BytesIO
 from typing import TYPE_CHECKING, BinaryIO, Literal, Optional, TypedDict, Union
 
+from ..extras import logging
+
 import numpy as np
 import torch
 from transformers.image_utils import get_image_size, is_valid_image, to_numpy_array
@@ -40,6 +42,9 @@ from ..extras.packages import (
     is_pyav_available,
     is_transformers_version_greater_than,
 )
+
+
+logger = logging.get_logger(__name__)
 
 
 if is_librosa_available():
@@ -171,9 +176,13 @@ class MMPluginMixin:
         )
         feature_extractor: SequenceFeatureExtractor = getattr(processor, "feature_extractor", None)
         if len(images) != 0 and self.image_token is None:
-            raise ValueError(
-                "This model does not support image input. Please check whether the correct `template` is used."
+            # If template doesn't support images but images are provided, skip images processing
+            # This can happen when using text-only templates with datasets that contain images
+            logger.warning_rank0(
+                f"Template does not support image input but {len(images)} images were provided. "
+                "Images will be ignored. Please check whether the correct `template` is used."
             )
+            images = []
 
         if len(videos) != 0 and self.video_token is None:
             raise ValueError(

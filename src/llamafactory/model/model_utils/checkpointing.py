@@ -19,6 +19,7 @@
 # limitations under the License.
 
 import inspect
+import os
 from functools import WRAPPER_ASSIGNMENTS, partial, wraps
 from types import MethodType
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
@@ -151,6 +152,13 @@ def prepare_model_for_training(model: "PreTrainedModel", model_args: "ModelArgum
         for name, param in model.named_parameters():
             if param.ndim == 1 and any(ln_name in name for ln_name in LAYERNORM_NAMES):
                 param.data = param.data.to(torch.float32)
+
+    if (
+        os.environ.get("ACCELERATE_USE_FSDP", "false").lower() == "true"
+        and int(os.environ.get("FSDP_VERSION", "1")) == 2
+    ):
+        model_args.use_reentrant_gc = False
+        logger.warning_rank0("You are using fsdp2, `use_reentrant_gc` has been set to False.")
 
     if not model_args.disable_gradient_checkpointing:
         if not getattr(model, "supports_gradient_checkpointing", False):

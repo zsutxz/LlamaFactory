@@ -114,6 +114,7 @@ class AttentionFunction(str, Enum):
     DISABLED = "disabled"
     SDPA = "sdpa"
     FA2 = "fa2"
+    FA3 = "fa3"
 
 
 class EngineName(str, Enum):
@@ -141,6 +142,7 @@ class QuantizationMethod(str, Enum):
     EETQ = "eetq"
     HQQ = "hqq"
     MXFP4 = "mxfp4"
+    FP8 = "fp8"
 
 
 class RopeScaling(str, Enum):
@@ -659,6 +661,26 @@ register_model_group(
 
 register_model_group(
     models={
+        "ERNIE-4.5-VL-28B-A3B-PT": {
+            DownloadSource.DEFAULT: "baidu/ERNIE-4.5-VL-28B-A3B-PT",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-PT",
+        },
+        "ERNIE-4.5-VL-28B-A3B-Thinking": {
+            DownloadSource.DEFAULT: "baidu/ERNIE-4.5-VL-28B-A3B-Thinking",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Thinking",
+        },
+        "ERNIE-4.5-VL-424B-A47B-Base-PT": {
+            DownloadSource.DEFAULT: "baidu/ERNIE-4.5-VL-424B-A47B-PT",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-VL-424B-A47B-PT",
+        },
+    },
+    template="ernie_vl",
+    multimodal=True,
+)
+
+
+register_model_group(
+    models={
         "EXAONE-3.0-7.8B-Instruct": {
             DownloadSource.DEFAULT: "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
         },
@@ -983,9 +1005,17 @@ register_model_group(
         "GLM-4.5V-Air-Thinking": {
             DownloadSource.DEFAULT: "zai-org/GLM-4.5V",
             DownloadSource.MODELSCOPE: "ZhipuAI/GLM-4.5V",
-        }
+        },
+        "GLM-4.6V": {
+            DownloadSource.DEFAULT: "zai-org/GLM-4.6V",
+            DownloadSource.MODELSCOPE: "ZhipuAI/GLM-4.6V",
+        },
+        "GLM-4.6V-Flash": {
+            DownloadSource.DEFAULT: "zai-org/GLM-4.6V-Flash",
+            DownloadSource.MODELSCOPE: "ZhipuAI/GLM-4.6V-Flash",
+        },
     },
-    template="glm4v_moe",
+    template="glm4_5v",
     multimodal=True,
 )
 
@@ -1038,7 +1068,7 @@ register_model_group(
             DownloadSource.MODELSCOPE: "openai/gpt-oss-120b",
         },
     },
-    template="gpt",
+    template="gpt_oss",
 )
 
 
@@ -1776,6 +1806,21 @@ register_model_group(
 
 register_model_group(
     models={
+        "MiMo-V2-Flash-Base": {
+            DownloadSource.DEFAULT: "XiaomiMiMo/MiMo-V2-Flash-Base",
+            DownloadSource.MODELSCOPE: "XiaomiMiMo/MiMo-V2-Flash-Base",
+        },
+        "MiMo-V2-Flash": {
+            DownloadSource.DEFAULT: "XiaomiMiMo/MiMo-V2-Flash",
+            DownloadSource.MODELSCOPE: "XiaomiMiMo/MiMo-V2-Flash",
+        },
+    },
+    template="mimo_v2",
+)
+
+
+register_model_group(
+    models={
         "MiMo-7B-VL-RL": {
             DownloadSource.DEFAULT: "XiaomiMiMo/MiMo-VL-7B-RL",
             DownloadSource.MODELSCOPE: "XiaomiMiMo/MiMo-VL-7B-RL",
@@ -1798,7 +1843,7 @@ register_model_group(
         },
         "MiMo-VL-7B-SFT-2508": {
             DownloadSource.DEFAULT: "XiaomiMiMo/MiMo-VL-7B-SFT-2508",
-            DownloadSource.DEFAULT: "XiaomiMiMo/MiMo-VL-7B-SFT-2508",
+            DownloadSource.MODELSCOPE: "XiaomiMiMo/MiMo-VL-7B-SFT-2508",
         },
     },
     template="qwen2_vl",
@@ -1947,6 +1992,37 @@ register_model_group(
         },
     },
     template="mistral",
+)
+
+register_model_group(
+    models={
+        "Ministral-3-3B-Base-2512": {
+            DownloadSource.DEFAULT: "mistralai/Ministral-3-3B-Base-2512",
+            DownloadSource.MODELSCOPE: "mistralai/Ministral-3-3B-Base-2512",
+        },
+        "Ministral-3-8B-Base-2512": {
+            DownloadSource.DEFAULT: "mistralai/Ministral-3-8B-Base-2512",
+            DownloadSource.MODELSCOPE: "mistralai/Ministral-3-8B-Base-2512",
+        },
+        "Ministral-3-14B-Base-2512": {
+            DownloadSource.DEFAULT: "mistralai/Ministral-3-14B-Base-2512",
+            DownloadSource.MODELSCOPE: "mistralai/Ministral-3-14B-Base-2512",
+        },
+        "Ministral-3-3B-Instruct-2512": {
+            DownloadSource.DEFAULT: "mistralai/Ministral-3-3B-Instruct-2512",
+            DownloadSource.MODELSCOPE: "mistralai/Ministral-3-3B-Instruct-2512",
+        },
+        "Ministral-3-8B-Instruct-2512": {
+            DownloadSource.DEFAULT: "mistralai/Ministral-3-8B-Instruct-2512",
+            DownloadSource.MODELSCOPE: "mistralai/Ministral-3-8B-Instruct-2512",
+        },
+        "Ministral-3-14B-Instruct-2512": {
+            DownloadSource.DEFAULT: "mistralai/Ministral-3-14B-Instruct-2512",
+            DownloadSource.MODELSCOPE: "mistralai/Ministral-3-14B-Instruct-2512",
+        },
+    },
+    template="ministral3",
+    multimodal=True,
 )
 
 
@@ -3469,6 +3545,17 @@ register_model_group(
         },
     },
     template="telechat2",
+)
+
+
+register_model_group(
+    models={
+        "VibeThinker-1.5B": {
+            DownloadSource.DEFAULT: "WeiboAI/VibeThinker-1.5B",
+            DownloadSource.MODELSCOPE: "WeiboAI/VibeThinker-1.5B",
+        },
+    },
+    template="qwen3",
 )
 
 

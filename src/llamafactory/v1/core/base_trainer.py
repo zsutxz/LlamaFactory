@@ -12,43 +12,44 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+"""The definition of trainer.
+
+Init Phase:
+
+1. Init dataloader.
+2. Init optimizer (deepspeed).
+3. Shard model.
+4. Init optimizer (fsdp).
+5. Init scheduler.
+
+Train Phase:
+1. Train Loop
+
+"""
 
 from ..config.training_args import TrainingArguments
-from ..extras.types import Model, Processor, Tensor, TorchDataset
-
-
-class DataCollator:
-    """Default Data collator."""
-
-    def __init__(self, processor: Processor) -> None:
-        self.processor = processor
-
-    def __call__(self, features: list[dict[str, Any]]) -> dict[str, Tensor]:
-        """Collate features into a batch."""
-        for feature in features:
-            pass
-
-        # sft: messages
-        # dpo: chosen_messages, rejected_messages
+from ..utils.types import HFModel, Processor, TorchDataset
+from .trainer_utils.data_collator import DataCollator
 
 
 class BaseTrainer:
     def __init__(
         self,
         args: TrainingArguments,
-        model: Model,
+        model: HFModel,
         processor: Processor,
         dataset: TorchDataset,
-        data_collator: DataCollator,
     ) -> None:
         self.args = args
         self.model = model
         self.processor = processor
         self.dataset = dataset
-        self.data_collator = data_collator
+        self.data_collator = DataCollator()
         self.optimizer = None
         self.lr_scheduler = None
+
+    def init_model_and_optimizer(self) -> None:
+        pass
 
     def create_dataloader(self) -> None:
         pass

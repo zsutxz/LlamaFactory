@@ -14,10 +14,10 @@
 import re
 import types
 
-from .....extras.types import HFModel
-from ....trainer_plugins.distributed.accelerate import is_torch_npu_available
-from ..constants import DeviceType, KernelType
-from ..registry import KERNEL_REGISTRY, MetaRMSNormKernel
+from .....accelerator.helper import DeviceType, is_torch_npu_available
+from .....utils.types import HFModel
+from ..constants import KernelType
+from ..registry import MetaRMSNormKernel
 
 
 def _npu_rms_forward(self, hidden_states):
@@ -38,13 +38,9 @@ def _npu_rms_forward(self, hidden_states):
 class NpuRMSNormKernel(MetaRMSNormKernel):
     """NPU kernel wrapper for RMSNorm that applies the replacement within a model."""
 
+    type = KernelType.RMSNORM
     device = DeviceType.NPU
     kernel = _npu_rms_forward
-
-    @classmethod
-    def register_kernel(cls, kernel_type=KernelType.RMSNORM, device_type=DeviceType.NPU):
-        """Register the NPU RMSNorm forward implementation to the global registry."""
-        KERNEL_REGISTRY.register(kernel_type, device_type, cls)
 
     @classmethod
     def apply(cls, model, **kwargs) -> HFModel:

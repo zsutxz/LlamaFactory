@@ -476,6 +476,39 @@ class BasePlugin(MMPluginMixin):
 
 
 @dataclass
+class ErnieVLPlugin(BasePlugin):
+    @override
+    def process_messages(
+        self,
+        messages: list[dict[str, str]],
+        images: list["ImageInput"],
+        videos: list["VideoInput"],
+        audios: list["AudioInput"],
+        processor: Optional["MMProcessor"],
+    ) -> list[dict[str, str]]:
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        messages = deepcopy(messages)
+        image_idx, video_idx = 0, 0
+        for message in messages:
+            content = message["content"]
+            image_token = self.image_token or "<|image@placeholder|>"
+            video_token = self.video_token or "<|video@placeholder|>"
+            while IMAGE_PLACEHOLDER in content:
+                image_idx += 1
+                content = content.replace(
+                    IMAGE_PLACEHOLDER, f"Picture {image_idx}:<|IMAGE_START|>{image_token}<|IMAGE_END|>", 1
+                )
+            while VIDEO_PLACEHOLDER in content:
+                video_idx += 1
+                content = content.replace(
+                    VIDEO_PLACEHOLDER, f"Video {video_idx}:<|VIDEO_START|>{video_token}<|VIDEO_END|>", 1
+                )
+            message["content"] = content
+        return messages
+
+
+@dataclass
 class Gemma3Plugin(BasePlugin):
     @override
     def process_messages(
@@ -1600,7 +1633,12 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
                 for video, duration in zip(videos["videos"], videos["durations"])
             ]
             mm_inputs.update(
-                video_processor(videos=videos["videos"], video_metadata=video_metadata, return_metadata=True)
+                video_processor(
+                    videos=videos["videos"],
+                    video_metadata=video_metadata,
+                    fps=getattr(processor, "video_fps", 2.0),
+                    return_metadata=True,
+                )
             )
             temporal_patch_size: int = getattr(image_processor, "temporal_patch_size", 2)
             if "second_per_grid_ts" in processor.model_input_names:
@@ -2048,6 +2086,7 @@ class VideoLlavaPlugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "ernie_vl": ErnieVLPlugin,
     "gemma3": Gemma3Plugin,
     "glm4v": GLM4VPlugin,
     "gemma3n": Gemma3nPlugin,

@@ -12,9 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ..config.sample_args import SampleArguments
+from abc import ABC, abstractmethod
+
+from ..config.sample_args import SampleArguments, SampleBackend
+from .model_loader import ModelLoader
+
+
+class BaseEngine(ABC):
+    @abstractmethod
+    def __init__(self, sample_args: SampleArguments, model_loader: ModelLoader) -> None: ...
+
+    @abstractmethod
+    async def generate(self):
+        pass
+
+    @abstractmethod
+    async def batch_infer(self):
+        pass
+
+
+class HuggingFaceEngine(BaseEngine):
+    def __init__(self, model_loader: ModelLoader, sample_args: SampleArguments) -> None:
+        self.args = sample_args
 
 
 class ChatSampler:
-    def __init__(self, sample_args: SampleArguments) -> None:
-        self.args = sample_args
+    def __init__(self, model_loader: ModelLoader, sample_args: SampleArguments) -> None:
+        if sample_args.sample_backend == SampleBackend.HF:
+            self.engine = HuggingFaceEngine(model_loader, sample_args)
+        else:
+            raise ValueError(f"Unknown sample backend: {sample_args.sample_backend}")

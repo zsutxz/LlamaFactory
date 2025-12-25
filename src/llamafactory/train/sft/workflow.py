@@ -21,6 +21,7 @@ from ...data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_templat
 from ...extras.constants import IGNORE_INDEX
 from ...extras.logging import get_logger
 from ...extras.misc import calculate_tps
+from ...extras.packages import is_transformers_version_greater_than
 from ...extras.ploting import plot_loss
 from ...model import load_model, load_tokenizer
 from ..trainer_utils import create_modelcard_and_push
@@ -67,6 +68,12 @@ def run_sft(
 
     # Metric utils
     metric_module = {}
+    if model_args.use_kt:
+        if training_args.predict_with_generate:
+            raise NotImplementedError("`predict_with_generate` is not supported in KTransformers SFT yet.")
+        elif finetuning_args.compute_accuracy:
+            raise NotImplementedError("`compute_accuracy` is not supported in KTransformers SFT yet.")
+
     if training_args.predict_with_generate:
         metric_module["compute_metrics"] = ComputeSimilarity(tokenizer=tokenizer)
     elif finetuning_args.compute_accuracy:
@@ -75,21 +82,52 @@ def run_sft(
 
     # Keyword arguments for `model.generate`
     gen_kwargs = generating_args.to_dict(obey_generation_config=True)
-    gen_kwargs["eos_token_id"] = [tokenizer.eos_token_id] + tokenizer.additional_special_tokens_ids
+
+    # Compatible with Transformers v4 and Transformers v5
+    if is_transformers_version_greater_than("4.58.0"):
+        extra_ids = getattr(tokenizer, "additional_special_tokens_ids", None)
+        if not isinstance(extra_ids, list):
+            extra_special_tokens = getattr(tokenizer, "_extra_special_tokens", [])
+            string_tokens = [str(t) for t in extra_special_tokens]
+            extra_ids = tokenizer.convert_tokens_to_ids(string_tokens)
+        all_eos_ids = [tokenizer.eos_token_id] + [i for i in extra_ids if i != -1]
+        unique_eos_ids = list(dict.fromkeys(all_eos_ids))
+        gen_kwargs["eos_token_id"] = unique_eos_ids
+    else:
+        gen_kwargs["eos_token_id"] = [tokenizer.eos_token_id] + tokenizer.additional_special_tokens_ids
     gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
 
     # Initialize our Trainer
-    trainer = CustomSeq2SeqTrainer(
-        model=model,
-        args=training_args,
-        finetuning_args=finetuning_args,
-        data_collator=data_collator,
-        callbacks=callbacks,
-        gen_kwargs=gen_kwargs,
-        **dataset_module,
-        **tokenizer_module,
-        **metric_module,
-    )
+    if model_args.use_kt:
+        from ktransformers.sft.lora import KTrainer  # type: ignore
+        from ktransformers.util.globals import GLOBAL_CONFIG  # type: ignore
+
+        GLOBAL_CONFIG._config["mod"] = "sft"
+
+        trainer = KTrainer(
+            model=model,
+            args=training_args,
+            tokenizer=tokenizer_module,
+            data_collator=data_collator,
+            callbacks=callbacks,
+            **dataset_module,
+            **metric_module,
+        )
+        trainer.model_accepts_loss_kwargs = False
+        model.config.use_cache = False
+
+    else:
+        trainer = CustomSeq2SeqTrainer(
+            model=model,
+            args=training_args,
+            finetuning_args=finetuning_args,
+            data_collator=data_collator,
+            callbacks=callbacks,
+            gen_kwargs=gen_kwargs,
+            **dataset_module,
+            **tokenizer_module,
+            **metric_module,
+        )
 
     # Training
     if training_args.do_train:

@@ -1,4 +1,4 @@
-# Copyright 2025 the KVCache.AI team, Approaching AI, and the LlamaFactory team.
+# Copyright 2025 the LlamaFactory team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .workflow import run_sft
+import os
+import socket
 
 
-__all__ = ["run_sft"]
+def find_available_port() -> int:
+    """Find an available port on the local machine."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
+def is_env_enabled(env_var: str, default: str = "0") -> bool:
+    """Check if the environment variable is enabled."""
+    return os.getenv(env_var, default).lower() in ["true", "yes", "on", "t", "y", "1"]

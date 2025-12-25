@@ -11,17 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from ..config.model_args import ModelArguments
-from ..extras.types import Model, Processor
-
-
-class ModelEngine:
-    def __init__(self, model_args: ModelArguments) -> None:
-        self.args = model_args
-
-    def get_model(self) -> Model:
-        pass
-
-    def get_processor(self) -> Processor:
-        pass

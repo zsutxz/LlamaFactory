@@ -42,9 +42,11 @@ TRAIN_ARGS = {
     "output_dir": "dummy_dir",
     "overwrite_output_dir": True,
     "fp16": True,
+    "report_to": "none",  # transfromers compatibility
 }
 
 
+@pytest.mark.runs_on(["cpu", "mps"])
 @pytest.mark.parametrize("num_samples", [16])
 def test_unsupervised_data(num_samples: int):
     train_dataset = load_dataset_module(**TRAIN_ARGS)["train_dataset"]

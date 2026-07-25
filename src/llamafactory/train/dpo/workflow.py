@@ -15,6 +15,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+DPO 训练工作流
+
+该模块实现了 DPO (Direct Preference Optimization) 训练的完整工作流程：
+1. 加载分词器和模型
+2. 准备数据集和数据整理器
+3. 创建参考模型（可选）
+4. 初始化 DPO 训练器
+5. 执行训练和评估
+6. 保存模型和生成模型卡
+"""
+
 from typing import TYPE_CHECKING, Optional
 
 from ...data import PairwiseDataCollatorWithPadding, get_dataset, get_template_and_fix_tokenizer
@@ -39,12 +51,26 @@ def run_dpo(
     finetuning_args: "FinetuningArguments",
     callbacks: Optional[list["TrainerCallback"]] = None,
 ):
+    """
+    运行 DPO 训练的主工作流
+
+    Args:
+        model_args: 模型相关参数
+        data_args: 数据相关参数
+        training_args: 训练参数
+        finetuning_args: 微调参数
+        callbacks: 训练回调函数列表（可选）
+    """
+    # 加载分词器
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
+
+    # 加载数据集（使用 reward model 的 stage，因为数据格式相同）
     dataset_module = get_dataset(template, model_args, data_args, training_args, stage="rm", **tokenizer_module)
     model = load_model(tokenizer, model_args, finetuning_args, training_args.do_train)
 
+    # 创建成对数据整理器（用于 chosen 和 rejected 样本）
     data_collator = PairwiseDataCollatorWithPadding(
         template=template,
         model=model,
@@ -53,15 +79,16 @@ def run_dpo(
         **tokenizer_module,
     )
 
-    # Create reference model
+    # 创建参考模型
     if finetuning_args.use_ref_model:
-        if finetuning_args.ref_model is None and (not training_args.do_train):  # use the model itself
+        if finetuning_args.ref_model is None and (not training_args.do_train):  # 仅评估时使用模型自身作为参考
             ref_model = model
         else:
             ref_model = create_ref_model(model_args, finetuning_args)
     else:
         ref_model = None
 
+    # 根据是否使用 KTransformers 选择训练器
     if model_args.use_kt:
         from ktransformers.util.globals import GLOBAL_CONFIG  # type: ignore
 
@@ -72,7 +99,7 @@ def run_dpo(
     else:
         from .trainer import CustomDPOTrainer
 
-    # Initialize our Trainer
+    # 初始化训练器
     trainer = CustomDPOTrainer(
         model=model,
         ref_model=ref_model,
@@ -84,10 +111,11 @@ def run_dpo(
         **tokenizer_module,
     )
 
-    # Training
+    # 训练阶段
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
         trainer.save_model()
+        # 计算有效 tokens/秒
         if finetuning_args.include_effective_tokens_per_second:
             train_result.metrics["effective_tokens_per_sec"] = calculate_tps(
                 dataset_module["train_dataset"], train_result.metrics, stage="rm"
@@ -96,6 +124,7 @@ def run_dpo(
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
+        # 绘制损失曲线
         if trainer.is_world_process_zero() and finetuning_args.plot_loss:
             keys = ["loss", "rewards/accuracies"]
             if isinstance(dataset_module.get("eval_dataset"), dict):
@@ -105,15 +134,16 @@ def run_dpo(
 
             plot_loss(training_args.output_dir, keys=keys)
 
-    # Evaluation
+    # 评估阶段
     if training_args.do_eval:
         metrics = trainer.evaluate(metric_key_prefix="eval")
-        if id(model) == id(ref_model):  # unable to compute rewards if reference model is the model itself
+        # 如果参考模型就是训练模型本身，无法计算奖励指标
+        if id(model) == id(ref_model):
             remove_keys = [key for key in metrics.keys() if "rewards" in key]
             for key in remove_keys:
                 metrics.pop(key)
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
-    # Create model card
+    # 创建模型卡并推送到 Hub
     create_modelcard_and_push(trainer, model_args, data_args, training_args, finetuning_args)

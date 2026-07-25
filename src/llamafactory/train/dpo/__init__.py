@@ -12,6 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+DPO (Direct Preference Optimization，直接偏好优化) 训练模块
+
+该模块提供了基于人类反馈的强化学习（RLHF）简化方案 DPO 的训练实现。
+DPO 通过直接优化偏好数据来对齐模型输出，无需训练独立的奖励模型。
+
+主要组件:
+- run_dpo: DPO 训练的主工作流函数
+- CustomDPOTrainer: 标准 DPO 训练器实现
+- KDPOTrainer: KTransformers 加速的 DPO 训练器
+"""
+
 from .workflow import run_dpo
 
 

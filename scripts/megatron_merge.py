@@ -16,7 +16,6 @@
 # limitations under the License.
 
 import os
-from typing import Optional
 
 import fire
 import torch
@@ -34,7 +33,7 @@ def convert_mca_to_hf(
     output_path: str = "./output",
     bf16: bool = False,
     fp16: bool = False,
-    convert_model_max_length: Optional[int] = None,
+    convert_model_max_length: int | None = None,
 ):
     """Convert megatron checkpoint to HuggingFace format.
 
@@ -67,11 +66,12 @@ def convert(
     output_path: str = "./output",
     bf16: bool = False,
     fp16: bool = False,
-    convert_model_max_length: Optional[int] = None,
+    convert_model_max_length: int | None = None,
     tensor_model_parallel_size: int = 1,
     pipeline_model_parallel_size: int = 1,
     expert_model_parallel_size: int = 1,
-    virtual_pipeline_model_parallel_size: Optional[int] = None,
+    virtual_pipeline_model_parallel_size: int | None = None,
+    moe_grouped_gemm: bool | None = None,
 ):
     """Convert checkpoint between MCA and HuggingFace formats.
 
@@ -85,6 +85,10 @@ def convert(
         pipeline_model_parallel_size: Pipeline model parallel size
         expert_model_parallel_size: Expert model parallel size
         virtual_pipeline_model_parallel_size: Virtual pipeline model parallel size
+        moe_grouped_gemm: Use grouped gemm for MoE experts. When enabled, expert
+            weights are stored in a flattened format (linear_fc1.weight0, weight1, ...)
+            rather than per-expert format (local_experts.0.linear_fc1.weight, ...).
+            Must match the format used when saving the checkpoint.
     """
     if bf16 and fp16:
         raise ValueError("bf16 and fp16 cannot be both True.")
@@ -98,8 +102,9 @@ def convert(
             pipeline_model_parallel_size=pipeline_model_parallel_size,
             expert_model_parallel_size=expert_model_parallel_size,
             virtual_pipeline_model_parallel_size=virtual_pipeline_model_parallel_size,
+            moe_grouped_gemm=moe_grouped_gemm,
+            transformer_impl="transformer_engine",  # hard code here since we default using te for training
         )
-
         convert_checkpoint_to_mca(
             checkpoint_path,
             output_path,

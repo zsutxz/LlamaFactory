@@ -15,39 +15,25 @@
 import json
 import sys
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 from omegaconf import OmegaConf
 from transformers import HfArgumentParser
 
-from ...extras.misc import is_env_enabled
+from ..utils.env import is_env_enabled
+from ..utils.helper import set_seed
 from .data_args import DataArguments
 from .model_args import ModelArguments
 from .sample_args import SampleArguments
 from .training_args import TrainingArguments
 
 
-InputArgument = Optional[Union[dict[str, Any], list[str]]]
+InputArgument = dict[str, Any] | list[str] | None
 
 
-def validate_args(
-    data_args: DataArguments,
-    model_args: ModelArguments,
-    training_args: TrainingArguments,
-    sample_args: SampleArguments,
-):
-    """Validate arguments."""
-    if (
-        model_args.quant_config is not None
-        and training_args.dist_config is not None
-        and training_args.dist_config.name == "deepspeed"
-    ):
-        raise ValueError("Quantization is not supported with deepspeed backend.")
-
-
-def get_args(args: InputArgument = None) -> tuple[DataArguments, ModelArguments, TrainingArguments, SampleArguments]:
+def get_args(args: InputArgument = None) -> tuple[ModelArguments, DataArguments, TrainingArguments, SampleArguments]:
     """Parse arguments from command line or config file."""
-    parser = HfArgumentParser([DataArguments, ModelArguments, TrainingArguments, SampleArguments])
+    parser = HfArgumentParser([ModelArguments, DataArguments, TrainingArguments, SampleArguments])
     allow_extra_keys = is_env_enabled("ALLOW_EXTRA_KEYS")
 
     if args is None:
@@ -71,9 +57,12 @@ def get_args(args: InputArgument = None) -> tuple[DataArguments, ModelArguments,
             print(f"Got unknown args, potentially deprecated arguments: {unknown_args}")
             raise ValueError(f"Some specified arguments are not used by the HfArgumentParser: {unknown_args}")
 
-    validate_args(*parsed_args)
+    model_args, data_args, training_args, sample_args = parsed_args
+    # Seed as early as possible after argument parsing so all downstream
+    # components (dist init, dataloader, model init in run_* entrypoints) share the same RNG state.
+    set_seed(training_args.seed, full_determinism=training_args.full_determinism)
 
-    return tuple(parsed_args)
+    return model_args, data_args, training_args, sample_args
 
 
 if __name__ == "__main__":

@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Literal, TypedDict, Union
-
-from typing_extensions import NotRequired
+from enum import StrEnum, unique
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDict, Union
 
 
 if TYPE_CHECKING:
@@ -55,6 +54,13 @@ else:
     ProcessGroup = None
 
 
+@unique
+class AttentionFunction(StrEnum):
+    EAGER = "eager"
+    SDPA = "sdpa"
+    FLASH_ATTENTION_2 = "flash_attention_2"
+
+
 class DatasetInfo(TypedDict, total=False):
     path: str
     """Local file path."""
@@ -72,41 +78,95 @@ class DatasetInfo(TypedDict, total=False):
     """Is streaming dataset, default to False."""
 
 
-class DistributedConfig(TypedDict, total=False):
-    mp_replicate_size: NotRequired[int]
-    """Model parallel replicate size, default to 1."""
-    mp_shard_size: NotRequired[int]
-    """Model parallel shard size, default to world_size // mp_replicate_size."""
-    dp_size: NotRequired[int]
-    """Data parallel size, default to world_size // cp_size."""
-    cp_size: NotRequired[int]
-    """Context parallel size, default to 1."""
-    timeout: NotRequired[int]
-    """Timeout for distributed communication, default to 600."""
-
-
 class Content(TypedDict):
-    type: Literal["text", "reasoning", "tools", "tool_calls", "image_url"]
+    type: Literal["text", "reasoning", "tool_call", "image_url", "video_url", "audio_url"]
+    """Type of the content."""
     value: str
+    """Value of the content."""
 
 
 class Message(TypedDict):
     role: Literal["system", "user", "assistant", "tool"]
+    """Role of the message."""
     content: list[Content]
-    loss_weight: float
+    """Content of the message."""
+    loss_weight: NotRequired[float]
+    """Loss weight for this message, default to 1.0. Required in training."""
 
 
 class SFTSample(TypedDict):
     messages: list[Message]
+    """Messages in the sample."""
+    tools: NotRequired[str]
+    """Tools for the sample in JSON string format."""
     extra_info: NotRequired[str]
+    """Extra information for the sample, e.g. kto_labels."""
     _dataset_name: NotRequired[str]
+    """Dataset name for the sample."""
 
 
 class DPOSample(TypedDict):
     chosen_messages: list[Message]
+    """Chosen messages in the sample."""
     rejected_messages: list[Message]
+    """Rejected messages in the sample."""
+    tools: NotRequired[str]
+    """Tools for the sample in JSON string format."""
     extra_info: NotRequired[str]
+    """Extra information for the sample, e.g. kto_labels."""
     _dataset_name: NotRequired[str]
+    """Dataset name for the sample."""
 
 
 Sample = Union[SFTSample, DPOSample]
+
+
+class ToolCall(TypedDict):
+    name: str
+    """Function name."""
+    arguments: dict[str, Any]
+    """Function arguments."""
+
+
+class ModelInput(TypedDict, total=False):
+    input_ids: list[int]
+    """Input ids for the model."""
+    attention_mask: list[int]
+    """Attention mask for the model."""
+    labels: list[int]
+    """Labels for the model."""
+    loss_weights: list[float]
+    """Loss weight for each token, default to 1.0."""
+    position_ids: NotRequired[list[int] | list[list[int]]]
+    """Position ids for the model (optional)."""
+    token_type_ids: NotRequired[list[int]]
+    """Token type ids used in DPO, 1 represents the chosen messages, 2 represents the rejected messages."""
+
+
+class BatchInput(TypedDict, total=False):
+    input_ids: Tensor
+    """Input ids for the model."""
+    attention_mask: Tensor
+    """Attention mask for the model."""
+    labels: Tensor
+    """Labels for the model."""
+    loss_weights: Tensor
+    """Loss weight for each token, default to 1.0."""
+    position_ids: NotRequired[Tensor]
+    """Position ids for the model (optional)."""
+    token_type_ids: NotRequired[Tensor]
+    """Token type ids used in DPO, 1 represents the chosen messages, 2 represents the rejected messages."""
+
+
+class BatchInfo(TypedDict):
+    micro_batch_size: int
+    """Micro batch size."""
+    num_micro_batch: int
+    """Number of micro batches."""
+    cutoff_len: int
+    """Cutoff length."""
+
+
+class ModelOutput(NamedTuple):
+    logits: Tensor
+    """Logits for the model."""

@@ -24,8 +24,8 @@ from llamafactory.v1.plugins.data_plugins.converter import DataConverterPlugin
 
 @pytest.mark.parametrize("num_samples", [16])
 def test_alpaca_converter(num_samples: int):
-    data_args = DataArguments(dataset="llamafactory/v1-dataset-info/tiny-supervised-dataset.yaml")
-    data_engine = DataEngine(data_args)
+    data_args = DataArguments(train_dataset="llamafactory/v1-dataset-info/tiny-supervised-dataset.yaml")
+    data_engine = DataEngine(data_args.train_dataset)
     original_data = load_dataset("llamafactory/tiny-supervised-dataset", split="train")
     indexes = random.choices(range(len(data_engine)), k=num_samples)
     for index in indexes:
@@ -54,18 +54,18 @@ def test_sharegpt_converter():
         "conversations": [
             {"from": "system", "value": "System"},
             {"from": "human", "value": "User"},
-            {"from": "function_call", "value": "Tool"},
+            {"from": "function_call", "value": "1"},
             {"from": "observation", "value": "Observation"},
             {"from": "gpt", "value": "Assistant"},
         ]
     }
     expected_data = {
         "messages": [
-            {"content": [{"type": "text", "value": "System"}], "loss_weight": 0.0, "role": "system"},
-            {"content": [{"type": "text", "value": "User"}], "loss_weight": 0.0, "role": "user"},
-            {"content": [{"type": "tool_calls", "value": "Tool"}], "loss_weight": 1.0, "role": "assistant"},
-            {"content": [{"type": "text", "value": "Observation"}], "loss_weight": 0.0, "role": "tool"},
-            {"content": [{"type": "text", "value": "Assistant"}], "loss_weight": 1.0, "role": "assistant"},
+            {"role": "system", "content": [{"type": "text", "value": "System"}], "loss_weight": 0.0},
+            {"role": "user", "content": [{"type": "text", "value": "User"}], "loss_weight": 0.0},
+            {"role": "assistant", "content": [{"type": "tool_call", "value": "1"}], "loss_weight": 1.0},
+            {"role": "tool", "content": [{"type": "text", "value": "Observation"}], "loss_weight": 0.0},
+            {"role": "assistant", "content": [{"type": "text", "value": "Assistant"}], "loss_weight": 1.0},
         ]
     }
     assert DataConverterPlugin("sharegpt")(example) == expected_data
@@ -73,8 +73,8 @@ def test_sharegpt_converter():
 
 @pytest.mark.parametrize("num_samples", [16])
 def test_pair_converter(num_samples: int):
-    data_args = DataArguments(dataset="llamafactory/v1-dataset-info/orca-dpo-pairs.yaml")
-    data_engine = DataEngine(data_args)
+    data_args = DataArguments(train_dataset="llamafactory/v1-dataset-info/orca-dpo-pairs.yaml")
+    data_engine = DataEngine(data_args.train_dataset)
     original_data = load_dataset("HuggingFaceH4/orca_dpo_pairs", split="train_prefs")
     indexes = random.choices(range(len(data_engine)), k=num_samples)
     for index in indexes:
@@ -117,9 +117,3 @@ def test_pair_converter(num_samples: int):
             ],
         }
         assert data_engine[index] == {"_dataset_name": "tiny_dataset", **expected_data}
-
-
-if __name__ == "__main__":
-    test_alpaca_converter(1)
-    test_sharegpt_converter()
-    test_pair_converter(1)

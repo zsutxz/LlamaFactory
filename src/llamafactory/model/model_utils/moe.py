@@ -62,6 +62,10 @@ def add_z3_leaf_module(model: "PreTrainedModel") -> None:
         # deepseek v3 and kimi vl use custom code
         _set_z3_leaf_modules(model, ["DeepseekV3MoE"])
 
+    if model_type == "hy_v3":
+        # hy3 uses custom code
+        _set_z3_leaf_modules(model, ["HYV3MoE"])
+
     if model_type == "ernie4_5_moe":
         from transformers.models.ernie4_5_moe.modeling_ernie4_5_moe import Ernie4_5_MoeSparseMoeBlock
 
@@ -76,6 +80,11 @@ def add_z3_leaf_module(model: "PreTrainedModel") -> None:
         from transformers.models.glm4_moe.modeling_glm4_moe import Glm4MoeMoE
 
         _set_z3_leaf_modules(model, [Glm4MoeMoE])
+
+    if model_type == "glm4_moe_lite":
+        from transformers.models.glm4_moe_lite.modeling_glm4_moe_lite import Glm4MoeLiteMoE
+
+        _set_z3_leaf_modules(model, [Glm4MoeLiteMoE])
 
     if model_type == "glm4v_moe":
         from transformers.models.glm4v_moe.modeling_glm4v_moe import Glm4vMoeTextMoE
@@ -136,6 +145,16 @@ def add_z3_leaf_module(model: "PreTrainedModel") -> None:
         from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import Qwen3OmniMoeThinkerTextSparseMoeBlock
 
         _set_z3_leaf_modules(model, [Qwen3OmniMoeThinkerTextSparseMoeBlock])
+
+    if model_type == "qwen3_next":
+        from transformers.models.qwen3_next.modeling_qwen3_next import Qwen3NextSparseMoeBlock
+
+        _set_z3_leaf_modules(model, [Qwen3NextSparseMoeBlock])
+
+    if model_type == "qwen3_5_moe":
+        from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import Qwen3_5MoeSparseMoeBlock
+
+        _set_z3_leaf_modules(model, [Qwen3_5MoeSparseMoeBlock])
 
 
 def configure_moe(config: "PretrainedConfig", model_args: "ModelArguments", is_trainable: bool) -> None:

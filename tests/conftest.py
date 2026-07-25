@@ -12,15 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""LLaMA-Factory test configuration.
+"""LlamaFactory test configuration.
 
 Contains shared fixtures, pytest configuration, and custom markers.
 """
 
 import os
-from typing import Optional
 
 import pytest
+import torch
+import torch.distributed as dist
 from pytest import Config, FixtureRequest, Item, MonkeyPatch
 
 from llamafactory.extras.misc import get_current_device, get_device_count, is_env_enabled
@@ -71,7 +72,7 @@ def _handle_slow_tests(items: list[Item]):
                 item.add_marker(skip_slow)
 
 
-def _get_visible_devices_env() -> Optional[str]:
+def _get_visible_devices_env() -> str | None:
     """Return device visibility env var name."""
     if CURRENT_DEVICE == "cuda":
         return "CUDA_VISIBLE_DEVICES"
@@ -108,15 +109,22 @@ def _handle_device_visibility(items: list[Item]):
 def pytest_collection_modifyitems(config: Config, items: list[Item]):
     """Modify test collection based on markers and environment."""
     # Handle version compatibility (from HEAD)
-    if not is_transformers_version_greater_than("4.57.0"):
-        skip_bc = pytest.mark.skip(reason="Skip backward compatibility tests")
-        for item in items:
-            if "tests_v1" in str(item.fspath):
-                item.add_marker(skip_bc)
+    skip_bc = pytest.mark.skip(reason="Skip backward compatibility tests")
+    for item in items:
+        if "tests_v1" in str(item.fspath) and not is_transformers_version_greater_than("4.57.0"):
+            item.add_marker(skip_bc)
 
     _handle_slow_tests(items)
     _handle_runs_on(items)
     _handle_device_visibility(items)
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_distributed_state():
+    """Cleanup distributed state after each test."""
+    yield
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 
 @pytest.fixture(autouse=True)
@@ -140,6 +148,7 @@ def _manage_distributed_env(request: FixtureRequest, monkeypatch: MonkeyPatch) -
             devices_str = ",".join(str(i) for i in range(required))
 
         monkeypatch.setenv(env_key, devices_str)
+        monkeypatch.syspath_prepend(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     else:  # non-distributed test
         if old_value:
             visible_devices = [v for v in old_value.split(",") if v != ""]
@@ -147,8 +156,43 @@ def _manage_distributed_env(request: FixtureRequest, monkeypatch: MonkeyPatch) -
         else:
             monkeypatch.setenv(env_key, "0")
 
+        if CURRENT_DEVICE == "cuda":
+            monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+        elif CURRENT_DEVICE == "npu":
+            monkeypatch.setattr(torch.npu, "device_count", lambda: 1)
+
 
 @pytest.fixture
 def fix_valuehead_cpu_loading():
     """Fix valuehead model loading."""
     patch_valuehead_model()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def bypass_mistral_regex_check():
+    """Disable Mistral regex network check.
+
+    Monkey-patch TokenizersBackend._patch_mistral_regex into a no-op.
+    """
+    try:
+        from transformers.tokenization_utils_fast import TokenizersBackend
+    except ImportError:
+        # Very old transformers, nothing to patch
+        yield
+        return
+
+    if not hasattr(TokenizersBackend, "_patch_mistral_regex"):
+        # Method does not exist in this version
+        yield
+        return
+
+    # Backup original method
+    original = TokenizersBackend._patch_mistral_regex
+
+    # Replace with no-op
+    TokenizersBackend._patch_mistral_regex = lambda cls, tokenizer, *args, **kwargs: tokenizer
+
+    yield
+
+    # Restore original method
+    TokenizersBackend._patch_mistral_regex = original

@@ -25,10 +25,11 @@ Including:
 """
 
 import os
+from collections.abc import Callable
 from contextlib import contextmanager
-from enum import Enum, unique
+from enum import StrEnum, unique
 from functools import lru_cache, wraps
-from typing import Callable, Optional
+from typing import Optional
 
 import numpy as np
 import torch
@@ -38,7 +39,7 @@ from ..utils.types import ProcessGroup, Tensor, TensorLike
 
 
 @unique
-class DeviceType(str, Enum):
+class DeviceType(StrEnum):
     CPU = "cpu"
     CUDA = "cuda"
     META = "meta"
@@ -48,7 +49,7 @@ class DeviceType(str, Enum):
 
 
 @unique
-class ReduceOp(str, Enum):
+class ReduceOp(StrEnum):
     SUM = "sum"
     MEAN = "mean"
     MAX = "max"
@@ -118,9 +119,19 @@ def synchronize() -> None:
 
 
 @requires_accelerator
-def set_device() -> None:
-    """Set current accelerator."""
-    torch.accelerator.set_device_index(get_local_rank())
+def set_device_index() -> None:
+    """Set current accelerator index to local rank."""
+    if get_current_accelerator().type != DeviceType.CPU:
+        torch.accelerator.set_device_index(get_local_rank())
+
+
+@requires_accelerator
+def get_current_device() -> torch.device:
+    """Get current accelerator device."""
+    if get_current_accelerator().type == DeviceType.CPU:
+        return torch.device(DeviceType.CPU.value)
+    else:
+        return torch.device(type=get_current_accelerator().type, index=torch.accelerator.current_device_index())
 
 
 def is_torch_cuda_available():
@@ -167,6 +178,16 @@ def operate_tensorlike(fn: Callable[[...], Tensor], data: TensorLike, **kwargs) 
         return result.item()
     else:
         return result.tolist()
+
+
+def get_process_group_backend() -> str:
+    """Get backend for init process group."""
+    if get_current_accelerator().type == DeviceType.NPU:
+        return "hccl"
+    elif get_current_accelerator().type == DeviceType.CUDA:
+        return "nccl"
+    else:
+        return "gloo"
 
 
 def all_gather(tensor: Tensor, group: Optional[ProcessGroup] = None) -> Tensor:

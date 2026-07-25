@@ -14,7 +14,7 @@
 
 import json
 from dataclasses import dataclass, field
-from typing import Literal, Optional, Union
+from typing import Optional
 
 from transformers import Seq2SeqTrainingArguments
 from transformers.training_args import _convert_str_dict
@@ -40,59 +40,107 @@ else:
 class RayArguments:
     r"""Arguments pertaining to the Ray training."""
 
-    ray_run_name: Optional[str] = field(
-        default=None,
-        metadata={"help": "The training results will be saved at `<ray_storage_path>/ray_run_name`."},
-    )
-    ray_storage_path: str = field(
-        default="./saves",
-        metadata={"help": "The storage path to save training results to"},
-    )
-    ray_storage_filesystem: Optional[Literal["s3", "gs", "gcs"]] = field(
-        default=None,
-        metadata={"help": "The storage filesystem to use. If None specified, local filesystem will be used."},
-    )
     ray_num_workers: int = field(
         default=1,
         metadata={"help": "The number of workers for Ray training. Default is 1 worker."},
     )
-    resources_per_worker: Union[dict, str] = field(
-        default_factory=lambda: {"GPU": 1},
-        metadata={"help": "The resources per worker for Ray training. Default is to use 1 GPU per worker."},
-    )
-    placement_strategy: Literal["SPREAD", "PACK", "STRICT_SPREAD", "STRICT_PACK"] = field(
-        default="PACK",
-        metadata={"help": "The placement strategy for Ray training. Default is PACK."},
-    )
-    ray_init_kwargs: Optional[Union[dict, str]] = field(
+    ray_init_kwargs: dict | str | None = field(
         default=None,
         metadata={"help": "The arguments to pass to ray.init for Ray training. Default is None."},
+    )
+    master_addr: str | None = field(
+        default=None,
+        metadata={"help": "The master address for init_process_group"},
+    )
+    master_port: str | None = field(
+        default=None,
+        metadata={"help": "The master port for init_process_group"},
     )
 
     def __post_init__(self):
         self.use_ray = use_ray()
-        if isinstance(self.resources_per_worker, str) and self.resources_per_worker.startswith("{"):
-            self.resources_per_worker = _convert_str_dict(json.loads(self.resources_per_worker))
 
         if isinstance(self.ray_init_kwargs, str) and self.ray_init_kwargs.startswith("{"):
             self.ray_init_kwargs = _convert_str_dict(json.loads(self.ray_init_kwargs))
 
-        if self.ray_storage_filesystem is not None:
-            if self.ray_storage_filesystem not in ["s3", "gs", "gcs"]:
-                raise ValueError(
-                    f"ray_storage_filesystem must be one of ['s3', 'gs', 'gcs'], got {self.ray_storage_filesystem}."
-                )
 
-            import pyarrow.fs as fs
+@dataclass
+class ProfilerArguments:
+    r"""Arguments for torch profiler configuration."""
 
-            if self.ray_storage_filesystem == "s3":
-                self.ray_storage_filesystem = fs.S3FileSystem()
-            elif self.ray_storage_filesystem == "gs" or self.ray_storage_filesystem == "gcs":
-                self.ray_storage_filesystem = fs.GcsFileSystem()
+    enable_torch_profiler: bool = field(
+        default=False,
+        metadata={"help": "Whether to enable torch profiler for collecting performance traces."},
+    )
+    profiler_output_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Directory to write profiler traces. Defaults to <output_dir>/profiler if not set."},
+    )
+    profiler_wait_steps: int = field(
+        default=1,
+        metadata={"help": "Number of steps to skip at the start of each profiling cycle."},
+    )
+    profiler_warmup_steps: int = field(
+        default=1,
+        metadata={"help": "Number of profiler warm-up steps per cycle."},
+    )
+    profiler_active_steps: int = field(
+        default=1,
+        metadata={"help": "Number of steps to actively record per cycle."},
+    )
+    profiler_repeat: int = field(
+        default=1,
+        metadata={"help": "Number of profiling cycles. Set to 0 for continuous profiling."},
+    )
+    profiler_record_shapes: bool = field(
+        default=True,
+        metadata={"help": "Whether to record tensor shapes during profiling."},
+    )
+    profiler_profile_memory: bool = field(
+        default=True,
+        metadata={"help": "Whether to profile memory usage."},
+    )
+    profiler_with_stack: bool = field(
+        default=True,
+        metadata={"help": "Whether to record stack traces during profiling."},
+    )
+    profile_modules: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Comma-separated list of module name patterns to profile with CUDA events. "
+                "Supports fnmatch wildcards (e.g. 'model.layers.0.self_attn,model.layers.*.mlp'). "
+                "Reports per-module forward/backward timing statistics at each logging step."
+            )
+        },
+    )
 
 
 @dataclass
-class TrainingArguments(RayArguments, BaseTrainingArguments):
+class Fp8Arguments:
+    r"""Arguments pertaining to the FP8 training."""
+
+    fp8: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable FP8 mixed precision training via HuggingFace Accelerate. "
+            "Requires PyTorch 2.7+ and Hopper architecture GPUs."
+        },
+    )
+    fp8_backend: str = field(
+        default="auto",
+        metadata={
+            "help": "FP8 backend to use ('auto', 'torchao', 'te', 'msamp'). 'auto' selects best available backend."
+        },
+    )
+    fp8_enable_fsdp_float8_all_gather: bool = field(
+        default=False,
+        metadata={"help": "Enable FP8 optimizations for FSDP2 all-gather operations."},
+    )
+
+
+@dataclass
+class TrainingArguments(ProfilerArguments, Fp8Arguments, RayArguments, BaseTrainingArguments):
     r"""Arguments pertaining to the trainer."""
 
     overwrite_output_dir: bool = field(

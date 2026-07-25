@@ -65,10 +65,10 @@ class PairwiseTrainer(Trainer):
             self.add_callback(BAdamCallback)
 
     @override
-    def create_optimizer(self) -> "torch.optim.Optimizer":
+    def create_optimizer(self, *args, **kwargs) -> "torch.optim.Optimizer":
         if self.optimizer is None:
             self.optimizer = create_custom_optimizer(self.model, self.args, self.finetuning_args)
-        return super().create_optimizer()
+        return super().create_optimizer(*args, **kwargs)
 
     @override
     def create_scheduler(
@@ -108,6 +108,27 @@ class PairwiseTrainer(Trainer):
             return loss, (loss, chosen_scores, rejected_scores)
         else:
             return loss
+
+    @override
+    def _save(self, output_dir: Optional[str] = None, state_dict=None):
+        if state_dict is None:
+            state_dict = self.model.state_dict()
+
+        if getattr(self.args, "save_safetensors", True):
+            from collections import defaultdict
+
+            ptrs = defaultdict(list)
+            for name, tensor in state_dict.items():
+                if isinstance(tensor, torch.Tensor):
+                    ptrs[id(tensor)].append(name)
+
+            for names in ptrs.values():
+                if len(names) > 1:
+                    names.sort()
+                    for name in names[1:]:
+                        state_dict.pop(name, None)
+
+        super()._save(output_dir, state_dict)
 
     def save_predictions(self, predict_results: "PredictionOutput") -> None:
         r"""Save model predictions to `output_dir`.

@@ -144,6 +144,7 @@ class VllmEngine(BaseEngine):
         skip_special_tokens: Optional[bool] = input_kwargs.pop("skip_special_tokens", None)
         max_length: Optional[int] = input_kwargs.pop("max_length", None)
         max_new_tokens: Optional[int] = input_kwargs.pop("max_new_tokens", None)
+        seed: Optional[int] = input_kwargs.pop("seed", None)
         stop: Optional[Union[str, list[str]]] = input_kwargs.pop("stop", None)
 
         if length_penalty is not None:
@@ -163,7 +164,7 @@ class VllmEngine(BaseEngine):
         if max_new_tokens:
             max_tokens = max_new_tokens
 
-        sampling_params = SamplingParams(
+        sampling_kwargs = dict(
             n=num_return_sequences,
             repetition_penalty=(
                 repetition_penalty if repetition_penalty is not None else self.generating_args["repetition_penalty"]
@@ -179,36 +180,37 @@ class VllmEngine(BaseEngine):
             if skip_special_tokens is not None
             else self.generating_args["skip_special_tokens"],
         )
+        if seed is not None:
+            sampling_kwargs["seed"] = seed
 
+        sampling_params = SamplingParams(**sampling_kwargs)
+
+        multi_modal_data = {}
         if images is not None:  # add image features
-            multi_modal_data = {
-                "image": self.template.mm_plugin._regularize_images(
-                    images,
-                    image_max_pixels=self.model_args.image_max_pixels,
-                    image_min_pixels=self.model_args.image_min_pixels,
-                )["images"]
-            }
-        elif videos is not None:
-            multi_modal_data = {
-                "video": self.template.mm_plugin._regularize_videos(
-                    videos,
-                    image_max_pixels=self.model_args.video_max_pixels,
-                    image_min_pixels=self.model_args.video_min_pixels,
-                    video_fps=self.model_args.video_fps,
-                    video_maxlen=self.model_args.video_maxlen,
-                )["videos"]
-            }
-        elif audios is not None:
+            multi_modal_data["image"] = self.template.mm_plugin._regularize_images(
+                images,
+                image_max_pixels=self.model_args.image_max_pixels,
+                image_min_pixels=self.model_args.image_min_pixels,
+            )["images"]
+
+        if videos is not None:
+            multi_modal_data["video"] = self.template.mm_plugin._regularize_videos(
+                videos,
+                image_max_pixels=self.model_args.video_max_pixels,
+                image_min_pixels=self.model_args.video_min_pixels,
+                video_fps=self.model_args.video_fps,
+                video_maxlen=self.model_args.video_maxlen,
+            )["videos"]
+
+        if audios is not None:
             audio_data = self.template.mm_plugin._regularize_audios(
                 audios,
                 sampling_rate=self.model_args.audio_sampling_rate,
             )
-            multi_modal_data = {"audio": zip(audio_data["audios"], audio_data["sampling_rates"])}
-        else:
-            multi_modal_data = None
+            multi_modal_data["audio"] = zip(audio_data["audios"], audio_data["sampling_rates"])
 
         result_generator = self.model.generate(
-            {"prompt_token_ids": prompt_ids, "multi_modal_data": multi_modal_data},
+            {"prompt_token_ids": prompt_ids, "multi_modal_data": multi_modal_data or None},
             sampling_params=sampling_params,
             request_id=request_id,
             lora_request=self.lora_request,

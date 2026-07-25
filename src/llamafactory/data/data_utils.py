@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import json
-from enum import Enum, unique
+from enum import StrEnum, unique
 from typing import TYPE_CHECKING, Any, Optional, TypedDict, Union
 
 import fsspec
@@ -35,7 +35,7 @@ SLOTS = list[Union[str, set[str], dict[str, str]]]
 
 
 @unique
-class Role(str, Enum):
+class Role(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
@@ -65,11 +65,17 @@ def merge_dataset(
         if not data_args.streaming:
             logger.warning_rank0_once("We recommend using `mix_strategy=concat` in non-streaming mode.")
 
+        strategy_map: str = {
+            "interleave_under": "first_exhausted",
+            "interleave_over": "all_exhausted",
+            "interleave_once": "all_exhausted_without_replacement",
+        }[data_args.mix_strategy]
+
         return interleave_datasets(
             datasets=all_datasets,
             probabilities=data_args.interleave_probs,
             seed=seed,
-            stopping_strategy="first_exhausted" if data_args.mix_strategy.endswith("under") else "all_exhausted",
+            stopping_strategy=strategy_map,  # type: ignore
         )
 
     else:
@@ -190,7 +196,7 @@ def read_cloud_json(cloud_path: str) -> list[Any]:
 
     # filter out non-JSON files
     files = [x["Key"] for x in fs.listdir(cloud_path)] if fs.isdir(cloud_path) else [cloud_path]
-    files = filter(lambda file: file.endswith(".json") or file.endswith(".jsonl"), files)
+    files = list(filter(lambda file: file.endswith(".json") or file.endswith(".jsonl"), files))
     if not files:
         raise ValueError(f"No JSON/JSONL files found in the specified path: {cloud_path}.")
 

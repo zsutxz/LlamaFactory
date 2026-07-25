@@ -52,15 +52,17 @@ def create_train_tab(engine: "Engine") -> dict[str, "Component"]:
         learning_rate = gr.Textbox(value="5e-5")
         num_train_epochs = gr.Textbox(value="3.0")
         max_grad_norm = gr.Textbox(value="1.0")
+        train_seed = gr.Textbox(value="42")
         max_samples = gr.Textbox(value="100000")
         compute_type = gr.Dropdown(choices=["bf16", "fp16", "fp32", "pure_bf16"], value="bf16")
 
-    input_elems.update({learning_rate, num_train_epochs, max_grad_norm, max_samples, compute_type})
+    input_elems.update({learning_rate, num_train_epochs, max_grad_norm, train_seed, max_samples, compute_type})
     elem_dict.update(
         dict(
             learning_rate=learning_rate,
             num_train_epochs=num_train_epochs,
             max_grad_norm=max_grad_norm,
+            train_seed=train_seed,
             max_samples=max_samples,
             compute_type=compute_type,
         )
@@ -108,9 +110,24 @@ def create_train_tab(engine: "Engine") -> dict[str, "Component"]:
             with gr.Column():
                 enable_thinking = gr.Checkbox(value=True)
                 report_to = gr.Dropdown(
-                    choices=["none", "wandb", "mlflow", "neptune", "tensorboard", "all"],
+                    choices=["none", "wandb", "mlflow", "neptune", "tensorboard", "trackio", "all"],
                     value="none",
                     allow_custom_value=True,
+                )
+
+            with gr.Accordion("Trackio Settings", open=False):
+                project = gr.Textbox(
+                    value="huggingface",
+                    label="Project Name",
+                    info="Project name for experiment tracking (used by Trackio, W&B, etc.)",
+                )
+
+                trackio_space_id = gr.Textbox(
+                    value="trackio", label="Trackio Space ID", info="Hugging Face Space ID for Trackio deployment"
+                )
+
+                hub_private_repo = gr.Checkbox(
+                    value=False, label="Private Repository", info="Make the Hugging Face repository private"
                 )
 
     input_elems.update(
@@ -128,6 +145,9 @@ def create_train_tab(engine: "Engine") -> dict[str, "Component"]:
             use_llama_pro,
             enable_thinking,
             report_to,
+            project,
+            trackio_space_id,
+            hub_private_repo,
         }
     )
     elem_dict.update(
@@ -146,6 +166,9 @@ def create_train_tab(engine: "Engine") -> dict[str, "Component"]:
             use_llama_pro=use_llama_pro,
             enable_thinking=enable_thinking,
             report_to=report_to,
+            project=project,
+            trackio_space_id=trackio_space_id,
+            hub_private_repo=hub_private_repo,
         )
     )
 

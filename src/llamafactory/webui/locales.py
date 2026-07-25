@@ -35,35 +35,40 @@ LOCALES = {
             "value": (
                 "<h3><center>Visit <a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
                 "GitHub Page</a> <a href='https://llamafactory.readthedocs.io/en/latest/' target='_blank'>"
-                "Documentation</a></center></h3>"
+                "Documentation</a> <a href='https://blog.llamafactory.net/en/' target='_blank'>"
+                "Blog</a></center></h3>"
             ),
         },
         "ru": {
             "value": (
                 "<h3><center>Посетить <a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
                 "страницу GitHub</a> <a href='https://llamafactory.readthedocs.io/en/latest/' target='_blank'>"
-                "Документацию</a></center></h3>"
+                "Документацию</a> <a href='https://blog.llamafactory.net/en/' target='_blank'>"
+                "Блог</a></center></h3>"
             ),
         },
         "zh": {
             "value": (
                 "<h3><center>访问 <a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
                 "GitHub 主页</a> <a href='https://llamafactory.readthedocs.io/zh-cn/latest/' target='_blank'>"
-                "官方文档</a></center></h3>"
+                "官方文档</a> <a href='https://blog.llamafactory.net/' target='_blank'>"
+                "博客</a></center></h3>"
             ),
         },
         "ko": {
             "value": (
                 "<h3><center><a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
                 "GitHub 페이지</a> <a href='https://llamafactory.readthedocs.io/en/latest/' target='_blank'>"
-                "공식 문서</a>를 방문하세요.</center></h3>"
+                "공식 문서</a> <a href='https://blog.llamafactory.net/en/' target='_blank'>"
+                "블로그</a>를 방문하세요.</center></h3>"
             ),
         },
         "ja": {
             "value": (
                 "<h3><center><a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
                 "GitHub ページ</a> <a href='https://llamafactory.readthedocs.io/en/latest/' target='_blank'>"
-                "ドキュメント</a>にアクセスする</center></h3>"
+                "ドキュメント</a> <a href='https://blog.llamafactory.net/en/' target='_blank'>"
+                "ブログ</a>にアクセスする</center></h3>"
             ),
         },
     },
@@ -532,6 +537,28 @@ LOCALES = {
         "ja": {
             "label": "最大勾配ノルム",
             "info": "勾配クリッピングのためのノルム。",
+        },
+    },
+    "train_seed": {
+        "en": {
+            "label": "Seed",
+            "info": "Random seed for training.",
+        },
+        "ru": {
+            "label": "Seed",
+            "info": "Random seed for training.",
+        },
+        "zh": {
+            "label": "随机种子",
+            "info": "训练使用的随机种子。",
+        },
+        "ko": {
+            "label": "Seed",
+            "info": "Random seed for training.",
+        },
+        "ja": {
+            "label": "Seed",
+            "info": "Random seed for training.",
         },
     },
     "max_samples": {
@@ -2701,6 +2728,45 @@ LOCALES = {
         },
         "ja": {
             "label": "温度",
+        },
+    },
+    "seed": {
+        "en": {
+            "label": "Generation seed (-1 for random)",
+        },
+        "ru": {
+            "label": "Generation seed (-1 = random)",
+        },
+        "zh": {
+            "label": "生成随机种子（-1 表示随机）",
+        },
+        "ko": {
+            "label": "Generation seed (-1 = random)",
+        },
+        "ja": {
+            "label": "Generation seed (-1 = random)",
+        },
+    },
+    "eval_seed": {
+        "en": {
+            "label": "Seed",
+            "info": "Random seed for evaluation and prediction.",
+        },
+        "ru": {
+            "label": "Seed",
+            "info": "Random seed for evaluation and prediction.",
+        },
+        "zh": {
+            "label": "随机种子",
+            "info": "评估和预测使用的随机种子。",
+        },
+        "ko": {
+            "label": "Seed",
+            "info": "Random seed for evaluation and prediction.",
+        },
+        "ja": {
+            "label": "Seed",
+            "info": "Random seed for evaluation and prediction.",
         },
     },
     "skip_special_tokens": {

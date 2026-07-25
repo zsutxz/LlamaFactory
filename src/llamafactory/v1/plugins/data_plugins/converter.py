@@ -13,13 +13,12 @@
 # limitations under the License.
 
 
-from typing import Any, Literal, TypedDict
-
-from typing_extensions import NotRequired
+import json
+from typing import Any, Literal, NotRequired, TypedDict
 
 from ...utils import logging
 from ...utils.plugin import BasePlugin
-from ...utils.types import DPOSample, Sample, SFTSample
+from ...utils.types import DPOSample, Sample, SFTSample, ToolCall
 
 
 logger = logging.get_logger(__name__)
@@ -33,7 +32,8 @@ class AlpacaSample(TypedDict, total=False):
 
 
 SharegptMessage = TypedDict(
-    "SharegptMessage", {"from": Literal["human", "gpt", "system", "function_call", "observation"], "value": str}
+    "SharegptMessage",
+    {"from": Literal["human", "gpt", "system", "function_call", "observation"], "value": str},
 )
 
 
@@ -63,7 +63,7 @@ class DataConverterPlugin(BasePlugin):
         return super().__call__(raw_sample)
 
 
-@DataConverterPlugin("alpaca").register
+@DataConverterPlugin("alpaca").register()
 def alpaca_converter(raw_sample: AlpacaSample) -> SFTSample:
     """Convert Alpaca sample to SFT sample.
 
@@ -100,7 +100,7 @@ def alpaca_converter(raw_sample: AlpacaSample) -> SFTSample:
     return {"messages": messages}
 
 
-@DataConverterPlugin("sharegpt").register
+@DataConverterPlugin("sharegpt").register()
 def sharegpt_converter(raw_sample: SharegptSample) -> SFTSample:
     """Convert ShareGPT sample to SFT sample.
 
@@ -119,18 +119,26 @@ def sharegpt_converter(raw_sample: SharegptSample) -> SFTSample:
         "observation": "tool",
         "function_call": "assistant",
     }
+    sample = {}
     messages = []
-    tools = raw_sample.get("tools", "")
-
     for message in raw_sample.get("conversations", []):
         tag = message["from"]
         if tag not in tag_mapping:
             logger.warning_rank0(f"Unsupported role tag {tag} in message: {message}")
         elif tag == "function_call":
+            try:
+                tool_calls: ToolCall | list[ToolCall] = json.loads(message["value"])
+            except json.JSONDecodeError:
+                logger.warning_rank0(f"Invalid tool call format: {str(message['value'])}")
+                continue
+
+            if not isinstance(tool_calls, list):
+                tool_calls = [tool_calls]
+
             messages.append(
                 {
                     "role": "assistant",
-                    "content": [{"type": "tool_calls", "value": message["value"]}],
+                    "content": [{"type": "tool_call", "value": json.dumps(tool_call)} for tool_call in tool_calls],
                     "loss_weight": 1.0,
                 }
             )
@@ -143,16 +151,20 @@ def sharegpt_converter(raw_sample: SharegptSample) -> SFTSample:
                 }
             )
 
+    sample["messages"] = messages
+
+    tools = raw_sample.get("tools")
     if tools:
-        if messages and messages[0]["role"] == "system":
-            messages[0]["content"].append({"type": "tools", "value": tools})
-        else:
-            messages.insert(0, {"role": "system", "content": [{"type": "tools", "value": tools}], "loss_weight": 0.0})
+        try:
+            tools: list[dict[str, Any]] = json.loads(tools)
+            sample["tools"] = json.dumps(tools)
+        except json.JSONDecodeError:
+            logger.warning_rank0(f"Invalid tools format: {str(tools)}")
 
-    return {"messages": messages}
+    return sample
 
 
-@DataConverterPlugin("pair").register
+@DataConverterPlugin("pair").register()
 def pair_converter(raw_sample: PairSample) -> DPOSample:
     """Convert Pair sample to DPO sample.
 
@@ -168,17 +180,44 @@ def pair_converter(raw_sample: PairSample) -> DPOSample:
     def process_message(raw_messages: list[OpenaiMessage]):
         messages = []
         for message in raw_messages:
-            messages.append(
-                {
-                    "role": message["role"],
-                    "content": [{"type": "text", "value": message["content"]}],
-                    "loss_weight": 1.0 if message["role"] == "assistant" else 0.0,
-                }
-            )
+            if message["role"] == "tool":
+                try:
+                    tool_calls: ToolCall | list[ToolCall] = json.loads(message["content"])
+                except json.JSONDecodeError:
+                    logger.warning_rank0(f"Invalid tool call format: {str(message['content'])}")
+                    continue
+
+                if not isinstance(tool_calls, list):
+                    tool_calls = [tool_calls]
+
+                messages.append(
+                    {
+                        "role": message["role"],
+                        "content": [{"type": "tool_call", "value": json.dumps(tool_call)} for tool_call in tool_calls],
+                        "loss_weight": 1.0 if message["role"] == "assistant" else 0.0,
+                    }
+                )
+            else:
+                messages.append(
+                    {
+                        "role": message["role"],
+                        "content": [{"type": "text", "value": message["content"]}],
+                        "loss_weight": 1.0 if message["role"] == "assistant" else 0.0,
+                    }
+                )
 
         return messages
 
-    chosen_messages = process_message(raw_sample.get("chosen", []))
-    rejected_messages = process_message(raw_sample.get("rejected", []))
+    sample = {}
+    sample["chosen_messages"] = process_message(raw_sample.get("chosen", []))
+    sample["rejected_messages"] = process_message(raw_sample.get("rejected", []))
 
-    return {"chosen_messages": chosen_messages, "rejected_messages": rejected_messages}
+    tools = raw_sample.get("tools")
+    if tools:
+        try:
+            tools: list[dict[str, Any]] = json.loads(tools)
+            sample["tools"] = json.dumps(tools)
+        except json.JSONDecodeError:
+            logger.warning_rank0(f"Invalid tools format: {str(tools)}")
+
+    return sample

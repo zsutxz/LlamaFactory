@@ -15,19 +15,27 @@
 import torch
 
 from llamafactory.v1.config.model_args import ModelArguments
-from llamafactory.v1.core.model_loader import ModelLoader
+from llamafactory.v1.core.model_engine import ModelEngine
 
 
 def test_tiny_qwen():
-    from transformers import Qwen2Config, Qwen2ForCausalLM, Qwen2TokenizerFast
-
-    model_args = ModelArguments(model="llamafactory/tiny-random-qwen2.5")
-    model_loader = ModelLoader(model_args)
-    assert isinstance(model_loader.processor, Qwen2TokenizerFast)
-    assert isinstance(model_loader.model.config, Qwen2Config)
-    assert isinstance(model_loader.model, Qwen2ForCausalLM)
-    assert model_loader.model.dtype == torch.bfloat16
+    model_args = ModelArguments(model="llamafactory/tiny-random-qwen3")
+    model_engine = ModelEngine(model_args)
+    assert "Qwen2Tokenizer" in model_engine.processor.__class__.__name__
+    assert "Qwen3Config" in model_engine.model_config.__class__.__name__
+    assert "Qwen3ForCausalLM" in model_engine.model.__class__.__name__
+    assert model_engine.model.dtype == torch.bfloat16
 
 
-if __name__ == "__main__":
-    test_tiny_qwen()
+def test_tiny_qwen_with_kernel_plugin():
+    from llamafactory.v1.plugins.model_plugins.kernels.ops.rms_norm.npu_rms_norm import npu_rms_norm_forward
+
+    model_args = ModelArguments(model="llamafactory/tiny-random-qwen3", kernel_config={"name": "auto"})
+    model_engine = ModelEngine(model_args)
+    # test enable apply kernel plugin
+    if hasattr(torch, "npu"):
+        assert model_engine.model.model.layers[0].input_layernorm.forward.__code__ == npu_rms_norm_forward.__code__
+    else:
+        assert model_engine.model.model.layers[0].input_layernorm.forward.__code__ != npu_rms_norm_forward.__code__
+
+    assert "Qwen3ForCausalLM" in model_engine.model.__class__.__name__

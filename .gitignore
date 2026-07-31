@@ -193,3 +193,5 @@ model/qwen3-1.7B/
 *.bin
 *.pth
 *.pt
+.heagent/
+.session-resume/

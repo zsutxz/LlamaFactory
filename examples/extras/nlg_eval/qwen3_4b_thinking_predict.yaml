@@ -1,0 +1,39 @@
+# Qwen3-4B-Thinking LoRA 生成式评估（= WebUI 的 Eval 选项卡）
+# 对应你 eval_2026-07-30-14-52-38 的参数。输出 generated_predictions.jsonl + BLEU/ROUGE。
+# 启动: llamafactory-cli train examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml
+#       （当前版本 eval 子命令已废弃，改用 train；本配置 do_predict:true 会走预测分支）
+# 注意:这是「在数据集上看模型生成什么」的 NLG 评估，不是 MMLU/CMMLU 标准基准。
+
+### model
+model_name_or_path: model/Qwen3-4B
+adapter_name_or_path: saves/Qwen3-4B-Thinking/lora/sft
+trust_remote_code: true
+template: qwen3
+enable_thinking: true      # 与训练一致，开思维链
+
+### method
+stage: sft
+do_predict: true           # 关键：predict 模式，不是 train
+finetuning_type: lora
+
+### dataset
+eval_dataset: alpaca_zh_demo
+dataset_dir: data
+cutoff_len: 2048           # WebUI 默认用了 1024；这里放宽到 2048 以容纳思维链长度
+max_samples: 200           # 先小样本跑通流程；要全量改大（你 WebUI 用了 100000，会很慢）
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: saves/Qwen3-4B-Thinking/lora/predict
+overwrite_output_dir: true
+report_to: none
+
+### eval
+per_device_eval_batch_size: 2
+predict_with_generate: true    # 关键：生成文本而非只算 loss
+max_new_tokens: 512
+temperature: 0.95              # 想要可复现的确定性输出：删掉下面两行（默认贪婪解码）
+top_p: 0.7
+ddp_timeout: 180000000

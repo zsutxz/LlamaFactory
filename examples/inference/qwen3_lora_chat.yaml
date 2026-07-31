@@ -1,0 +1,9 @@
+# Qwen3-4B + LoRA(train_2026-07-27-10-11-28) 对话配置
+# 启动: llamafactory-cli chat examples/inference/qwen3_lora_chat.yaml
+# 想关闭思维链：把 template 改成 qwen3_nothink
+model_name_or_path: model/Qwen3-4B
+adapter_name_or_path: saves/Qwen3-4B-Thinking/lora/sft
+template: qwen3
+enable_thinking: true   # 与训练一致，开启思维链（想关闭改 qwen3_nothink 并删此行）
+infer_backend: huggingface
+trust_remote_code: true

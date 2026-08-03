@@ -1,24 +1,69 @@
 # LLaMA-Factory 学习指南（实操上手）
 
-> 本文档记录在本机上手使用 LLaMA-Factory 的实操流程。
+> 本文档记录在本机（Windows + conda）上手使用 LLaMA-Factory 的**完整实操流程**。
 > 框架原理（目录结构 / 核心模块 / 配置 / 概念 / 代码位置）见 [frame.md](./frame.md)。
 
 ---
 
-## 实操速查：启动环境与 WebUI（本机）
+## 完整流程总览
 
-> 本节记录在本机（Windows + conda）实际跑通的流程，作为快速上手入口。
+```
+安装 → 预训练(PT) → 监督微调(SFT) → 偏好对齐(DPO) → 推理 → 蒸馏 → 评估 → 导出
+```
 
-### 0.1 启动 conda 环境
+| # | 阶段 | LF stage / 命令 | 数据形态 | 实测 |
+|---|------|----------------|---------|------|
+| 0 | 安装与环境 | `pip install -e .` | — | ✅ |
+| 1 | 预训练 PT | `stage: pt` | 纯文本 | ⚠️ 未实测 |
+| 2 | 监督微调 SFT | `stage: sft` | 指令-回答对 | ✅ 已实测 |
+| 3 | 偏好对齐 DPO | `stage: dpo` | chosen/rejected 对 | ⚠️ 未实测 |
+| 4 | 推理 | `llamafactory-cli chat` | — | ✅ 已实测 |
+| 5 | 蒸馏 | **LF 无独立阶段** = 强模型生成数据→SFT | teacher 生成 | ⚠️ 未实测 |
+| 6 | 评估 | `train` + `do_predict:true` | 同训练集 | ✅ 已实测 |
+| 7 | 导出 | `llamafactory-cli export` | — | ✅ 已实测 |
 
-环境名是 `llama-factory`（不是 `base`）。在 Git Bash 中激活：
+> ⚠️ 标注「未实测」的章节基于框架配置 + 原理编写，命令和数据格式可信，但没有本机跑通的真机记录；动手前请自行 smoke test。
+
+---
+
+## 0. 安装与环境
+
+### 0.1 安装 LLaMA-Factory
+
+**前置**：Python ≥ 3.11（`pyproject.toml` 硬性要求）。
+
+```bash
+git clone --depth 1 https://github.com/hiyouga/LlamaFactory.git
+cd LlamaFactory
+pip install -e .                         # 核心
+pip install -r requirements/metrics.txt  # 评估指标（BLEU/ROUGE 等，可选但建议装）
+```
+
+可选额外依赖：`metrics`、`deepspeed`（`pip install -r requirements/deepspeed.txt`），其余见 `examples/requirements/`。
+
+**Windows 必装 GPU 版 PyTorch**（默认 pip 装的是 CPU 版，跑不了 CUDA）：
+
+```bash
+pip uninstall torch torchvision torchaudio
+# 按本机 CUDA 版本装，参考 https://pytorch.org/get-started/locally/
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+```
+
+**（可选）下载渠道**：用 ModelScope 不用翻墙时，`pip install -e .` 已含 `modelscope`；用 HuggingFace 需 `pip install --upgrade huggingface_hub && huggingface-cli login`。
+
+### 0.2 本机环境核对
+
+环境名是 `llama-factory`（不是 `base`）。Git Bash 激活：
 
 ```bash
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate llama-factory
+
+python --version
+python -c "import datasets, torch; print(datasets.__version__, torch.__version__, torch.cuda.is_available())"
 ```
 
-激活后核对关键依赖（**`datasets` 必须在 3.0.0~3.6.0，否则 modelscope 会崩**）：
+本机实测版本：
 
 | 组件 | 本机版本 |
 |-----|---------|
@@ -27,108 +72,286 @@ conda activate llama-factory
 | datasets | 3.6.0 ✅ |
 | torch | 2.9.1+cu130，CUDA 可用 ✅ |
 
+> ⚠️ **`datasets` 必须在 3.0.0~3.6.0**，否则 modelscope 加载会崩。`pyproject.toml` 允许 `>=2.16,<=4.0`，但本机踩过坑——装新版本前先钉死。
+
+> 💡 **加速 CLI 冷启动**：`conda run -n llama-factory llamafactory-cli ...` 首次会卡 2 分钟以上（重导入 torch/transformers/gradio）。直接调环境内 exe 约需 5 秒：
+> `"C:/Users/skype/.conda/envs/llama-factory/Scripts/llamafactory-cli.exe" webui`
+> 下文命令统一用激活环境后的 `llamafactory-cli`（最通用）。
+
+### 0.3 启动 WebUI（可选，可视化操作）
+
 ```bash
-python --version
-python -c "import datasets, torch; print(datasets.__version__, torch.__version__, torch.cuda.is_available())"
+llamafactory-cli webui    # 浏览器打开 http://localhost:7860
 ```
 
-### 0.2 启动 WebUI（推荐新手）
+> WebUI 是常驻服务，`Ctrl+C` 停止。下面所有阶段都能在 WebUI 点出来，也可用命令行（本文用命令行，可复现）。
+
+### 0.4 下载基座模型
+
+LF 所有阶段（PT/SFT/DPO/推理/评估/导出）都需要一个**基座模型**。下到项目根的 `model/` 目录，配置里 `model_name_or_path` 填本地相对路径（如 `model/Qwen3-1.7B`），不依赖每次联网。本文涉及两个基座：
+
+| 用途 | model id | 本地路径 |
+|-----|----------|---------|
+| 快速验证（小、跑得快） | `Qwen/Qwen3-1.7B` | `model/Qwen3-1.7B` |
+| 各章配置蓝本默认 | `Qwen/Qwen3-4B` | `model/Qwen3-4B` |
+
+下载任选其一，**国内首选 ModelScope**：
 
 ```bash
-llamafactory-cli webui
+# 方式一：ModelScope（快，无需翻墙）
+modelscope download --model Qwen/Qwen3-1.7B --local_dir model/Qwen3-1.7B
+
+# 方式二：HuggingFace + 国内镜像
+export HF_ENDPOINT=https://hf-mirror.com   # PowerShell: $env:HF_ENDPOINT='https://hf-mirror.com'
+huggingface-cli download Qwen/Qwen3-1.7B --local-dir model/Qwen3-1.7B
 ```
 
-启动后在浏览器打开：**http://localhost:7860**
+> 💡 **懒人方式**：配置里直接写 hub id（`model_name_or_path: Qwen/Qwen3-1.7B`）+ 设 `export USE_MODELSCOPE=1`，LF 首次跑时自动下到缓存目录。缺点是路径散在缓存里、不便统一管理；正式训练建议显式下到 `model/`。
 
-> **本机实测提示**
-> - 用 `conda run -n llama-factory llamafactory-cli ...` 首次冷启动会很慢（cli 要重导入 torch/transformers/gradio，实测 `--help` 都能卡 2 分钟以上）。
-> - 更快的方式是直接调用环境内的可执行文件，绕过 `conda run`：
->   ```bash
->   "C:/Users/skype/.conda/envs/llama-factory/Scripts/llamafactory-cli.exe" webui
->   ```
->   实测约 5s 即可监听 7860 端口。
-> - WebUI 是常驻服务，启动后保持运行；`Ctrl+C` 停止。
-> - Claude Code 中每条命令是独立子进程，`conda activate` 不会跨命令保留——后续训练/推理命令需用 `conda run -n llama-factory ...` 或直接用上面的 `.exe`。
+> ⚠️ 下载本身不踩 datasets 坑，但**别顺手升级 datasets**——本环境必须锁 `3.0.0~3.6.0`（见 0.2）。Qwen3-1.7B（bf16）约 3.4GB。
 
-### 0.3 加载训练好的 LoRA 进行聊天
+### 0.5 实测坑：加载模型时 HF 联网超时
 
-配置文件 `examples/inference/qwen3_lora_chat.yaml`（加载 `train_2026-07-27-10-11-28` 这个 adapter）：
+用「懒人方式」（配置写 hub id + `HF_ENDPOINT` 镜像）时，模型下到 HF 默认缓存（`~/.cache/huggingface/hub/`）。**train/chat 启动加载阶段**常见这条：
+
+```
+'(ReadTimeoutError("HTTPSConnectionPool(host='hf-mirror.com', port=443): Read timed out. (read timeout=10)"), ...)' thrown while requesting HEAD https://hf-mirror.com/Qwen/Qwen3-1.7B/resolve/main/preprocessor_config.json
+```
+
+| 现象 | 根因 / 处理 |
+|-----|------------|
+| 上面那条 `thrown while requesting HEAD ...` | transformers 加载时默认联网发 HEAD 校验 ETag，hf-mirror 10s 超时。**这是 warning，不是错误，程序照常继续**——Qwen3 纯文本模型本就没有 `preprocessor_config.json`（多模态模型才有），缺它对加载无影响。 |
+| 彻底消除超时 | 模型已在缓存，**命令前面带** `HF_HUB_OFFLINE=1` 即完全离线、不再联网（推荐，零副作用，只对这条命令生效）：`HF_HUB_OFFLINE=1 llamafactory-cli train xxx.yaml`；PowerShell 先 `$env:HF_HUB_OFFLINE=1` 再跑命令。 |
+| 只加大容忍 | `HF_HUB_ETAG_TIMEOUT=30`（治标，镜像抖动仍会偶发）。 |
+| 根本上避免 | 用 0.4 的显式方式把模型下到 `model/Qwen3-1.7B`，配置写**本地路径**而非 hub id，根本不触发 HF 联网逻辑。 |
+
+> 💡 **判断真假崩溃**：真崩会带 `OSError` / traceback；只有 `'...' thrown while requesting HEAD` 这种措辞就是 warning，后面会正常继续（出现 `Map:` / `trainable params` / loss 等）。
+
+---
+
+## 1. 预训练 PT（继续预训练 / 知识注入）
+
+> ⚠️ 未实测。配置蓝本：`examples/train_lora/qwen3_lora_pretrain.yaml`。
+
+**用途**：把**领域纯文本**（非问答对）灌进模型，做知识注入 / 领域适配。学的是「知识 + 语言风格」。
+
+### 1.1 数据格式
+
+PT 是无监督语言建模，只要**纯文本**。在 `data/dataset_info.json` 注册，关键是用 `columns.prompt = "text"` 映射：
+
+```json
+"my_corpus": {
+  "file_name": "my_corpus.txt",
+  "columns": { "prompt": "text" }
+}
+```
+
+数据文件两种形式皆可（参照 `data/wiki_demo.txt`、`data/c4_demo.jsonl`）：
+
+- **纯文本 `.txt`**：每段一条样本，段落间换行分隔。
+- **`.jsonl`**：每行 `{"text": "一段领域文本..."}`。
+
+### 1.2 配置（本机基座）
+
+复制 `examples/train_lora/qwen3_lora_pretrain.yaml` 并把基座改成**本地路径** `model/Qwen3-4B`，数据集改成自己的：
+
+```yaml
+### model
+model_name_or_path: model/Qwen3-4B      # 改成本地基座（原配置是线上 hub）
+trust_remote_code: true
+
+### method
+stage: pt
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: all
+
+### dataset
+dataset: my_corpus                      # 你在 dataset_info.json 注册的名字
+cutoff_len: 2048
+max_samples: 100000
+preprocessing_num_workers: 16
+
+### output
+output_dir: saves/Qwen3-4B-Thinking/lora/pt
+logging_steps: 10
+save_steps: 500
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: true
+report_to: none
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4                   # PT 学习率比 SFT 高（1e-4 ~ 5e-4）
+num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+```
+
+> 💡 PT **不需要 `template`**（不走 chat 模板，raw text 直接喂）。`packing` 在 PT 阶段自动开启（多条短文本拼进 cutoff 窗口提吞吐）。
+
+### 1.3 训练命令
+
+```bash
+llamafactory-cli train examples/train_lora/qwen3_pt.yaml   # 你的配置路径
+```
+
+### 1.4 ⚠️ 关键认知
+
+**PT 灌进去的是「知识」，不是「问答能力」。** 做完 PT 模型能续写领域文本，但你直接问它问题，未必会好好回答。若目标是「能回答领域问题」，正确链路是 **PT（注入知识）→ SFT（教问答格式）**，两步缺一不可。
+
+---
+
+## 2. 监督微调 SFT（核心）
+
+> ✅ 已实测（Qwen3-4B-Thinking，6554 步、1.0 epoch 跑通）。配置：`examples/train_lora/qwen3_4b_thinking_lora_sft.yaml`。
+
+**用途**：用「指令-回答」对训练，让模型学会按特定格式/风格回答。最常用的微调阶段。
+
+### 2.1 数据格式
+
+**alpaca 格式**（最简单，单轮问答）：
+
+```json
+[
+  {"instruction": "你好", "output": "你好！有什么可以帮助你的？"},
+  {"instruction": "介绍一下Python", "input": "", "output": "Python是一种高级编程语言..."}
+]
+```
+
+在 `data/dataset_info.json` 注册：
+
+```json
+"my_data": {
+  "file_name": "my_data.json",
+  "columns": { "prompt": "instruction", "query": "input", "response": "output" }
+}
+```
+
+多轮对话用 **sharegpt 格式**（`"formatting": "sharegpt"`，`columns.messages = "conversations"`），详见 `data/dataset_info.json` 里的 `example` 条目。
+
+### 2.2 配置（实测蓝本）
+
+`examples/train_lora/qwen3_4b_thinking_lora_sft.yaml` 关键项：
+
+| 分块 | 参数 | 值 | 说明 |
+|-----|------|----|------|
+| model | `model_name_or_path` | `model/Qwen3-4B` | 本地基座 |
+| | `template` | `qwen3` | **必须与基座匹配**；关思维链改 `qwen3_nothink` |
+| | `enable_thinking` | `true` | 开思维链。**训练与推理必须一致** |
+| method | `stage` | `sft` | |
+| | `finetuning_type` | `lora` | `full`/`freeze`/`lora` |
+| | `lora_rank` / `lora_alpha` | `8` / `16` | 缩放倍率 = alpha/rank = 2 |
+| | `lora_target` | `all` | 挂所有线性层（最省心） |
+| dataset | `dataset` | `alpaca_zh_demo,...` | 已注册的集名，逗号分隔可混多个 |
+| | `cutoff_len` | `2048` | 单条 token 截断，也即 model_max_length |
+| | `max_samples` | `100000` | **调试专用**，smoke test 改 `2000` |
+| train | `per_device_train_batch_size` × `gradient_accumulation_steps` | `2 × 8` | 有效 batch = 16 |
+| | `learning_rate` | `5.0e-05` | 4B+LoRA 建议 `5e-5 ~ 1e-4` |
+| | `num_train_epochs` | `1.0` | SFT 通常 1~3，过多易过拟合 |
+| | `bf16` | `true` | Ampere+ 用 bf16；旧卡改 `fp16: true` |
+
+### 2.3 训练命令
+
+```bash
+llamafactory-cli train examples/train_lora/qwen3_4b_thinking_lora_sft.yaml
+```
+
+### 2.4 实测坑
+
+| 现象 | 根因 / 处理 |
+|-----|------------|
+| 想接着练（增量） | 用 `adapter_name_or_path` 加载已有 adapter + **新 output_dir**（否则 auto-resume 到已完成 checkpoint 立即结束） |
+| 训练真被中断 | 把 output_dir 指向未完成目录即可自动 resume；逻辑见 `src/llamafactory/hparams/parser.py:484-500` |
+| 显存不够（OOM） | 降 `per_device_train_batch_size` → 降 `cutoff_len` → 降 `lora_rank` → 换 QLoRA（`quantization_bit: 4`） |
+| 想快速验证流程 | `max_samples: 2000` + `num_train_epochs: 0.1` |
+
+---
+
+## 3. 偏好对齐 DPO
+
+> ⚠️ 未实测。配置蓝本：`examples/train_lora/qwen3_lora_dpo.yaml`。
+
+**用途**：用「同一问题的好回答 vs 坏回答」对比训练，调模型的回答**风格 / 偏好**（更无害、更符合人类偏好）。**不做新知识注入**——前提是 SFT 已把能力训好。变体：KTO（`stage: kto`，只需好/坏标签不成对）。
+
+### 3.1 数据格式（偏好数据）
+
+sharegpt 格式 + `ranking: true` + `chosen`/`rejected` 字段。在 `data/dataset_info.json` 注册：
+
+```json
+"my_pref": {
+  "file_name": "my_pref.json",
+  "ranking": true,
+  "formatting": "sharegpt",
+  "columns": { "messages": "conversations", "chosen": "chosen", "rejected": "rejected" }
+}
+```
+
+数据每条是一个问题 + 两个不同回答（chosen 好 / rejected 差）。参照 `data/dpo_en_demo.json`、`data/dpo_zh_demo.json`。
+
+### 3.2 配置（本机基座）
+
+复制 `examples/train_lora/qwen3_lora_dpo.yaml`，改基座为本地路径：
+
+```yaml
+### method
+stage: dpo
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: all
+pref_beta: 0.1                         # DPO β，约束偏离参考模型的幅度
+pref_loss: sigmoid                      # choices: [sigmoid (dpo), orpo, simpo]
+
+### dataset
+dataset: dpo_zh_demo
+template: qwen3_nothink                 # DPO 通常关思维链（按需）
+cutoff_len: 2048
+max_samples: 1000
+
+### output / train 关键差异
+output_dir: saves/Qwen3-4B-Thinking/lora/dpo
+learning_rate: 5.0e-6                   # ⚠️ 比 SFT 低一个数量级！DPO 必须小 lr
+num_train_epochs: 3.0
+bf16: true
+```
+
+### 3.3 训练命令
+
+```bash
+llamafactory-cli train examples/train_lora/qwen3_dpo.yaml
+```
+
+> ⚠️ DPO 的 `learning_rate` 必须远小于 SFT（5e-6 级别），否则容易把模型训崩。DPO 通常加载 **SFT 后的 adapter** 作为起点（`adapter_name_or_path` 指向 SFT 产物）。
+
+---
+
+## 4. 推理（加载训练结果）
+
+> ✅ 已实测。配置：`examples/inference/qwen3_lora_chat.yaml`、`examples/inference/qwen3_merged_chat.yaml`。
+
+两种加载方式：
+
+### 4.1 基座 + LoRA adapter（运行时合并）
+
+`qwen3_lora_chat.yaml`：
 
 ```yaml
 model_name_or_path: model/Qwen3-4B
 adapter_name_or_path: saves/Qwen3-4B-Thinking/lora/train_2026-07-27-10-11-28
 template: qwen3
-enable_thinking: true          # 与训练一致，开启思维链（关闭改 qwen3_nothink 并删此行）
+enable_thinking: true          # 必须与训练一致
 infer_backend: huggingface
 trust_remote_code: true
 ```
 
-启动（交互式，需在自己的终端跑；Claude Code 非交互，跑不了多轮 REPL）：
+### 4.2 直接加载合并后的完整模型
 
-```bash
-# Git Bash（推荐）
-conda activate llama-factory
-PYTHONUTF8=1 llamafactory-cli chat examples/inference/qwen3_lora_chat.yaml
-```
-
-```powershell
-# PowerShell
-conda activate llama-factory
-$env:PYTHONUTF8=1
-llamafactory-cli chat examples/inference\qwen3_lora_chat.yaml
-```
-
-> ⚠️ **中文输入必须用 UTF-8 终端（`PYTHONUTF8=1`）**，否则 tokenizer 会崩。本机实测踩坑：
-
-| 现象 | 误判方向 | 真正根因 |
-|-----|---------|---------|
-| `TypeError: TextEncodeInput...` | fast tokenizer async 竞态 | ❌ |
-| `UnicodeEncodeError '\udcaa' surrogates` | slow tokenizer bug | ❌ |
-| 实际 | — | ✅ 非 UTF-8 stdin 把中文损坏成孤立代理项，tokenizers 拒绝 |
-
-换 fast/slow tokenizer、调 `enable_thinking` 都没用——`PYTHONUTF8=1` 才是正解。
-
-> **关于「继续训练」**：原训练已完成（6554/6554 步、1.0 epoch），不存在"训练到一半"。若想**接着练**（增量）：用 `adapter_name_or_path` 加载已有 adapter + **新 output_dir**（否则会触发 auto-resume 到已完成的 checkpoint 立即结束）；若训练**真被中断**：把 output_dir 指向那个未完成目录即可自动 resume。逻辑见 `src/llamafactory/hparams/parser.py:484-500`。
-
-### 0.4 生成式评估（在数据集上看模型生成什么）
-
-配置 `examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml`（`do_predict: true` + `predict_with_generate: true`；adapter 已指向新训练 `saves/Qwen3-4B-Thinking/lora/sft`，`max_samples: 200`）。
-
-```powershell
-llamafactory-cli train examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml
-```
-
-产出在 `saves/Qwen3-4B-Thinking/lora/predict/`：
-
-- `generated_predictions.jsonl` — 每行 `label` vs `predict`，**人眼对比最直观**，比 BLEU 分更有参考价值
-- `predict_results.json` — BLEU/ROUGE 指标（中文场景分值普遍偏低，别被低分吓到）
-
-> **本机实测提示（0.9.6 版本坑）**
-> - `llamafactory-cli eval` **已废弃**（`launcher.py:147` 直接 raise `NotImplementedError`）。所有评估/预测统一用 `train` 命令 + 配置里 `do_predict: true`，走 `sft/workflow.py:152` 的预测分支，效果等同旧 `eval`。配置文件本身不用改，只换子命令。
-> - 命令行覆盖 YAML 配置用 **OmegaConf 语法 `key=value`**，不是 `--key value`（`parser.py:91` 用 `OmegaConf.from_cli`）。例：`... cfg.yaml max_samples=500`。用 `--key value` 会报 `ValueError: Some keys are not used by the HfArgumentParser`。
-> - 最稳的做法：直接改配置文件值，再跑**无参数**命令（上面的命令就是把 adapter 路径写进文件第 8 行后直接跑）。
-
-### 0.5 合并发布（把 LoRA 烧进基座，导出完整模型）
-
-评估满意后，把 LoRA adapter 合并进基座，导出一个**自包含的完整模型**（可脱离基座单独部署）。配置 `examples/merge_lora/qwen3_4b_thinking_export.yaml`：
-
-```powershell
-llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
-```
-
-导出到 `saves/Qwen3-4B-Thinking/merged/`（Qwen3-4B bf16 约 8GB，按 `export_size: 5` 分成 2 个 safetensors 分片）。
-
-> **执行要点**
-> - `export` 子命令在 0.9.6 **仍可用**（不像 `eval` 被废弃）。它读 `export_dir` / `export_size` / `export_device` / `export_legacy_format` 等参数。
-> - `export_device: cpu` 慢但稳（不吃 GPU 显存）；`auto` 用 GPU 快但占显存。本机用 `cpu` 即可。
-> - `export_legacy_format: false` 导出 safetensors（推荐）；`true` 导出老的 `pytorch_model.bin`。
-> - ⚠️ **`adapter_name_or_path` 要指向含 `adapter_config.json` 的目录**——即训练 output_dir 的**根目录**，**不要**指向 `checkpoint-XXX` 子目录（子目录会被 `save_total_limit` 清理；本机 `checkpoint-6554` 就已不存在，曾导致 export 报 `Can't find 'adapter_config.json'`）。本配置现指向 `saves/Qwen3-4B-Thinking/lora/sft`（与 0.4 评估同一个新训练）。要合并**旧的完整训练**就改成 `saves/Qwen3-4B-Thinking/lora/train_2026-07-27-10-11-28`，或命令行覆盖：`... qwen3_4b_thinking_export.yaml adapter_name_or_path=saves/Qwen3-4B-Thinking/lora/train_2026-07-27-10-11-28`（用 `key=value`，非 `--key`）。
-> - ⚠️ **合并时基座不能是量化模型 / 不能设 `quantization_bit`**（合并要求全精度基座）。
-> - 合并耗内存 ≈ 模型体积（约 8~16GB 内存），耗时几分钟到十几分钟。
-
-### 0.6 用合并后的模型做推理（验证 merged 能独立跑）
-
-合并的意义就是 `merged/` 是个**自包含的完整模型**——不再需要基座、也不需要 adapter。配置 `examples/inference/qwen3_merged_chat.yaml`（与 0.3 的区别：`model_name_or_path` 直接指向 `merged/`，**没有** `adapter_name_or_path`）：
+`qwen3_merged_chat.yaml`（无 `adapter_name_or_path`，`model_name_or_path` 直接指向 `merged/`）：
 
 ```yaml
 model_name_or_path: saves/Qwen3-4B-Thinking/merged
@@ -138,222 +361,132 @@ infer_backend: huggingface
 trust_remote_code: true
 ```
 
+### 4.3 命令（交互式，在自己的终端跑）
+
+```bash
+# Git Bash
+conda activate llama-factory
+PYTHONUTF8=1 llamafactory-cli chat examples/inference/qwen3_lora_chat.yaml
+```
+
 ```powershell
+# PowerShell
+conda activate llama-factory
 $env:PYTHONUTF8=1
-llamafactory-cli chat examples/inference/qwen3_merged_chat.yaml
+llamafactory-cli chat examples/inference\qwen3_merged_chat.yaml
 ```
 
-> **与 0.3（LoRA chat）的区别**
-> - 0.3 加载「基座 + adapter」（运行时合并）；0.6 直接加载**已合并的完整模型**。两者推理结果应一致，但 0.6 部署更简单——只搬 `merged/` 一个目录即可，不用带基座。
-> - 中文输入同样必须 `PYTHONUTF8=1`（见 0.3 的坑）。
-> - `merged/` 可直接用 **vLLM / Ollama**（目录里已生成 `Modelfile`）/ transformers 加载部署，不必再走 LLaMA-Factory。
+> ⚠️ **中文输入必须 `PYTHONUTF8=1`**（非 UTF-8 终端会把中文损坏成孤立代理项，tokenizers 拒绝；换 fast/slow tokenizer、调 thinking 都没用）。
+
+> Claude Code 非交互，跑不了多轮 REPL——交互式 chat 在自己的终端跑。程序化调用用 `llamafactory-cli api`（起 OpenAI 兼容 API 服务）或换 `infer_backend: vllm` 提吞吐。
 
 ---
 
-## 一、快速开始
+## 5. 蒸馏（R1 思维链 → 小模型）
 
-### 1.1 安装
+> ⚠️ 未实测。
+
+### 5.1 关键认知：LLaMA-Factory 没有「蒸馏」阶段
+
+LF 的 `stage` 只有 `pt / sft / rm / ppo / dpo / kto`，**没有 `distill`**。代码里搜到的 `Distill` 全是**模型名字**（DeepSeek-R1-XXB-Distill，别人蒸馏好的模型，LF 只是能加载），不是训练功能。
+
+所以「蒸馏」在 LF 里的落地方式是 **数据蒸馏**：**用强模型（teacher）生成回答 → 转成 SFT 数据 → 训练弱模型（student）**。本质就是第 2 节的 SFT，只是数据来源不同。
+
+### 5.2 R1 思维链蒸馏实操思路
+
+把 DeepSeek-R1 这类推理模型的「思维链能力」蒸到 Qwen3-4B：
+
+1. **准备 prompt 集**：收集一批你想要 student 学会的问题（数学、代码、推理等）。
+2. **teacher 生成**：用 R1（teacher）对每个 prompt 生成带 `<think>...</think>` 思维链的回答。批量生成可用 `llamafactory-cli api` 起 R1 服务 + 脚本调用，或直接调 R1 的 API。
+3. **转 SFT 格式**：把 `(prompt, R1 的思维链+回答)` 整理成 alpaca 格式：
+
+   ```json
+   [
+     {"instruction": "<问题>", "output": "<think>...推理过程...</think>最终答案..."}
+   ]
+   ```
+   注册到 `dataset_info.json`（同 2.1）。
+4. **student 训练**：用第 2 节 SFT 配置训 Qwen3-4B，**`enable_thinking: true`**（让 student 学会输出思维链格式）。DeepSeek-R1-Distill-Qwen 系列就是这么来的。
+
+> 💡 关键是**数据质量**：teacher 生成的思维链越准、越清晰，student 蒸出来的推理能力越强。这一步决定蒸馏效果，配置反而是次要的。
+
+---
+
+## 6. 评估（生成式 NLG 评估）
+
+> ✅ 已实测。配置：`examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml`。
+
+**用途**：让模型在数据集上实际生成回答，对比参考答案，算 BLEU/ROUGE。比训练 loss 更能反映真实生成质量。
+
+### 6.1 配置要点
+
+```yaml
+stage: sft                              # 仍走 sft workflow
+do_predict: true                        # ⚠️ 关键：预测而非训练
+predict_with_generate: true             # ⚠️ 关键：真生成文本（否则只算 loss）
+adapter_name_or_path: saves/Qwen3-4B-Thinking/lora/sft
+dataset: <评估集>
+max_samples: 200
+template: qwen3
+```
+
+### 6.2 命令
 
 ```bash
-git clone https://github.com/hiyouga/LLaMA-Factory.git
-cd LLaMA-Factory
-pip install -e .
+llamafactory-cli train examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml
 ```
 
-### 1.2 准备数据
+### 6.3 产出（`saves/Qwen3-4B-Thinking/lora/predict/`）
 
-在 `data/dataset_info.json` 中添加：
+- `generated_predictions.jsonl` —— 每行 `label` vs `predict`，**人眼对比最直观**，比 BLEU 更有参考价值。
+- `predict_results.json` —— BLEU/ROUGE 指标（中文场景分值普遍偏低，别被低分吓到）。
 
-```json
-{
-  "my_data": {
-    "file_name": "my_data.json",
-    "columns": {
-      "prompt": "instruction",
-      "response": "output"
-    }
-  }
-}
+### 6.4 实测坑（0.9.6 版本）
+
+| 坑 | 处理 |
+|----|------|
+| `llamafactory-cli eval` **已废弃** | 0.9.6 起 `launcher.py:147` 直接 raise `NotImplementedError`。所有评估统一用 `train` 命令 + 配置里 `do_predict: true`，走 `sft/workflow.py:152` 预测分支。配置不用改，只换子命令。 |
+| 命令行覆盖 YAML 用 **`key=value`** | OmegaConf 语法（`parser.py:91`），不是 `--key value`。例：`... cfg.yaml max_samples=500`。用 `--key value` 报 `Some keys are not used by the HfArgumentParser`。 |
+| 最稳的覆盖方式 | 直接改配置文件值，跑**无参数**命令。 |
+
+---
+
+## 7. 导出（合并 LoRA → 完整模型）
+
+> ✅ 已实测。配置：`examples/merge_lora/qwen3_4b_thinking_export.yaml`。
+
+**用途**：把 LoRA adapter 烧进基座，导出**自包含的完整模型**（脱离基座单独部署）。
+
+### 7.1 配置要点
+
+```yaml
+model_name_or_path: model/Qwen3-4B
+adapter_name_or_path: saves/Qwen3-4B-Thinking/lora/sft   # 指训练 output_dir 根目录
+template: qwen3
+finetuning_type: lora
+export_dir: saves/Qwen3-4B-Thinking/merged
+export_size: 5                          # 每个分片大小（GB）
+export_device: cpu                      # cpu 慢但稳；auto 用 GPU 快但占显存
+export_legacy_format: false             # false=safetensors(推荐)；true=pytorch_model.bin
 ```
 
-数据文件 `data/my_data.json`:
-
-```json
-[
-  {"instruction": "你好", "output": "你好！有什么可以帮助你的？"},
-  {"instruction": "介绍一下Python", "output": "Python是一种高级编程语言..."}
-]
-```
-
-### 1.3 配置训练
-
-复制示例配置并修改：
+### 7.2 命令
 
 ```bash
-cp examples/train_lora/llama3_lora_sft.yaml my_config.yaml
+llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
 ```
 
-### 1.4 开始训练
+导出到 `saves/Qwen3-4B-Thinking/merged/`（Qwen3-4B bf16 约 8GB，按 `export_size: 5` 分 2 个 safetensors 分片）。合并后可直接用 vLLM / Ollama（目录里有 `Modelfile`）/ transformers 加载部署，不必再走 LF。
 
-```bash
-llamafactory-cli train my_config.yaml
-```
+### 7.3 实测坑
 
-### 1.5 启动WebUI（推荐新手）
-
-```bash
-llamafactory-cli webui
-```
-
-然后在浏览器打开 http://localhost:7860
+| 坑 | 处理 |
+|----|------|
+| `Can't find 'adapter_config.json'` | `adapter_name_or_path` 要指向**训练 output_dir 根目录**（含 `adapter_config.json`），**不要**指向 `checkpoint-XXX` 子目录（会被 `save_total_limit` 清理）。 |
+| 命令行换合并目标 | `... qwen3_4b_thinking_export.yaml adapter_name_or_path=saves/Qwen3-4B-Thinking/lora/train_xxx`（用 `key=`，非 `--key`）。 |
+| 合并报量化错误 | ⚠️ **合并时基座不能是量化模型 / 不能设 `quantization_bit`**（要求全精度基座）。 |
+| 内存 / 耗时 | 合并耗内存 ≈ 模型体积（8~16GB），耗时几分钟到十几分钟。`export_device: cpu` 最稳。 |
 
 ---
 
-## 二、学习路径建议
-
-### 第一阶段：熟悉基本操作
-1. 安装项目
-2. 使用WebUI完成一次LoRA微调
-3. 理解配置文件各参数含义
-
-### 第二阶段：理解核心流程
-1. 阅读 `launcher.py` 理解命令路由
-2. 阅读 `data/loader.py` 理解数据加载
-3. 阅读 `model/loader.py` 理解模型加载
-
-### 第三阶段：深入定制
-1. 学习如何添加新模型（注册到 `constants.py`）
-2. 学习如何添加新模板（修改 `template.py`）
-3. 学习如何自定义数据处理器
-
-### 第四阶段：高级应用
-1. 多模态模型微调
-2. 分布式训练
-3. 模型评估和对比
-
----
-
-## 三、常见问题
-
-### Q1: 如何选择训练方法？
-- **显存充足**：Full或LoRA
-- **显存有限**：QLoRA（4-bit或8-bit）
-- **快速实验**：LoRA + 小rank
-
-### Q2: 如何添加新模型？
-参考 `src/llamafactory/extras/constants.py:153-167` 的 `register_model_group()` 函数
-
-### Q3: 训练不收敛怎么办？
-- 检查学习率（通常1e-4到5e-5）
-- 检查数据质量
-- 尝试增大warmup_ratio
-- 检查loss曲线（启用plot_loss）
-
-### Q4: 如何导出模型？
-```bash
-llamafactory-cli export export_config.yaml
-```
-
----
-
-## 四、资源链接
-
-- **官方文档**: https://github.com/hiyouga/LLaMA-Factory
-- **配置示例**: `examples/` 目录
-- **示例数据**: `data/` 目录
-- **框架原理**: [frame.md](./frame.md)
-
----
-
-## 五、微调参数详解
-
-> 以 `examples/train_lora/qwen3_4b_thinking_lora_sft.yaml`（你实际跑的 Qwen3-4B + LoRA + Thinking 配置）为蓝本，按配置文件的分块逐段解说。参数定义源码在 `src/llamafactory/hparams/`（`model_args.py` / `finetuning_args.py` / `data_args.py` / `training_args.py`）。
-
-### 5.1 模型相关（### model）
-
-| 参数 | 本配置值 | 含义 |
-|-----|---------|------|
-| `model_name_or_path` | `model/Qwen3-4B` | 基座模型。HuggingFace hub id 或本地目录 |
-| `trust_remote_code` | `true` | 信任远程代码（自定义/新架构模型需要） |
-| `template` | `qwen3` | 提示模板，决定 prompt 怎么拼。**必须与基座匹配**；Qwen3 想关思维链改 `qwen3_nothink` |
-| `enable_thinking` | `true` | 开思维链（推理模型）。**训练与推理必须一致**，否则效果会坏 |
-
-> 💡 `template` + `enable_thinking` 是 LLaMA-Factory 特有的「ReasoningTemplate」机制：模板控制特殊 token（如 `<think>`）的注入。换基座时这两个一定要跟着改。
-
-### 5.2 训练方法（### method）
-
-| 参数 | 本配置值 | 含义 |
-|-----|---------|------|
-| `stage` | `sft` | 训练阶段：`pt`(预训练) / `sft`(监督微调) / `rm`(奖励模型) / `ppo` / `dpo` / `kto` 等 |
-| `do_train` | `true` | 跑训练（评估/预测则用 `do_predict: true`） |
-| `finetuning_type` | `lora` | 微调方式：`full`(全参) / `freeze`(冻结大部分) / `lora`(LoRA 及其变体) |
-| `lora_rank` | `8` | LoRA 秩 r，即低秩矩阵的「内在维度」。越大→表达能力越强、可训参数越多、显存越多。常用 8/16/32/64 |
-| `lora_alpha` | `16` | LoRA 缩放因子，**默认 = rank × 2**。实际缩放倍率 = `alpha / rank` = 16/8 = 2。调大 alpha ≈ 放大学习率的效果 |
-| `lora_dropout` | `0` | LoRA 层的 dropout，防过拟合。小数据集可设 `0.05`~`0.1` |
-| `lora_target` | `all` | LoRA 挂载到哪些模块。`all` = 所有线性层（q/k/v/o/gate/up/down）。最省心；显存吃紧可只挂 q/v |
-
-### 5.3 数据（### dataset）
-
-| 参数 | 本配置值 | 含义 |
-|-----|---------|------|
-| `dataset` | `alpaca_zh_demo,...` | 训练集名称（须先在 `data/dataset_info.json` 注册），逗号分隔可混合多个数据集 |
-| `dataset_dir` | `data` | 数据集所在目录 |
-| `cutoff_len` | `2048` | 单条样本 token 截断长度（默认 2048）。越长→显存越多、越慢；思维链较长时需要放宽 |
-| `max_samples` | `100000` | 每个数据集最多取多少条（**调试专用**）。smoke test 改 `2000~5000` 先跑通流程 |
-| `preprocessing_num_workers` | `16` | 分词预处理并行进程数 |
-| `packing` | `false` | 序列打包：`true` 把多条短样本拼进一个 `cutoff_len` 窗口，提吞吐但会让样本边界混叠。**SFT 一般 false；pt 阶段自动 true** |
-
-> 💡 `cutoff_len` 也是模型的 `model_max_length`（见 `parser.py:518`）——它同时决定显存上限和模型能处理的最大上下文。
-
-### 5.4 输出与存盘（### output）
-
-| 参数 | 本配置值 | 含义 |
-|-----|---------|------|
-| `output_dir` | `saves/.../sft` | 输出目录。**CLI 直接写入此目录（不加时间戳）**；带 `train_时间戳` 子目录是 WebUI 的行为。重训前务必换 `output_dir`，否则会覆盖上次产物 |
-| `logging_steps` | `5` | 每 5 步打印一次训练 loss |
-| `save_steps` | `100` | 每 100 步存一个 checkpoint |
-| `save_total_limit` | `3` | 只保留最近 3 个 checkpoint，防止磁盘堆满（你原训练没设这个，存了 65 个） |
-| `plot_loss` | `true` | 训练结束自动画 loss 曲线（输出 `training_loss.png`） |
-| `report_to` | `none` | 不上报到 wandb / tensorboard 等外部平台 |
-
-### 5.5 训练超参（### train）
-
-| 参数 | 本配置值 | 含义 |
-|-----|---------|------|
-| `per_device_train_batch_size` | `2` | 每卡每步的样本数。直接受显存限制 |
-| `gradient_accumulation_steps` | `8` | 梯度累积步数。**有效 batch = 2 × 8 = 16**（显存不够时用累积换大 batch） |
-| `learning_rate` | `5.0e-05` | 学习率。4B + LoRA 建议 `5e-5 ~ 1e-4`（你比默认 `1e-4` 减半，更稳） |
-| `num_train_epochs` | `1.0` | 训练轮数。SFT 通常 1~3 epoch，过多易过拟合 |
-| `lr_scheduler_type` | `cosine` | 学习率调度：`cosine`(余弦退火) / `linear` / `constant` 等 |
-| `warmup_steps` | `0` | 学习率预热步数（从 0 线性升到 lr）。数据少时可设几十~几百步 |
-| `max_grad_norm` | `1.0` | 梯度裁剪阈值，防止梯度爆炸 |
-| `bf16` | `true` | bf16 混合精度。Ampere 及以上 GPU 用 `bf16`；旧卡（如 20 系）改 `fp16: true` |
-| `flash_attn` | `auto` | 注意力实现：`auto` / `disabled` / `sdpa` / `fa2` / `fa3`。`auto` 自动选当前环境最快的 |
-| `optim` | `adamw_torch` | 优化器 |
-| `seed` | `42` | 随机种子，保证可复现 |
-| `include_num_input_tokens_seen` | `true` | 日志里累计「已见 token 数」，方便看真实吞吐 |
-| `resume_from_checkpoint` | （注释） | **断点续训**：取消注释并指向某 checkpoint 路径即可从断点接着跑。续训时数据规模须与原训练一致 |
-
-### 5.6 评估（### eval，本配置默认注释掉）
-
-| 参数 | 示例值 | 含义 |
-|-----|---------|------|
-| `val_size` | `0.1` | 从训练集切 10% 做验证集（0~1 之间） |
-| `eval_strategy` | `steps` | 评估节奏：`steps` / `epoch` / `no` |
-| `eval_steps` | `500` | 每 500 步评估一次（配合 `eval_strategy: steps`） |
-
-> ⚠️ 开验证集会**减少训练数据**并增加评估开销。小数据集/快速实验可不开；正式训练建议开，配合 `plot_loss` 一起看是否过拟合。
-
-### 5.7 按需求调参速查
-
-| 目标 | 调什么 |
-|-----|--------|
-| 显存不够（OOM） | 降 `per_device_train_batch_size` → 降 `cutoff_len` → 降 `lora_rank` → 换 QLoRA（`quantization_bit: 4`） |
-| 想训得更好（欠拟合） | 适当加 `num_train_epochs` / 调大 `learning_rate` / 加 `lora_rank` |
-| 防过拟合（loss 后期回升） | 加 `lora_dropout` / 减 `num_train_epochs` / 开验证集早停 |
-| 想跑快点验证流程 | `max_samples: 2000` + `num_train_epochs: 0.1` |
-| 训练中途断了 | 设 `resume_from_checkpoint` 指向最近的 checkpoint |
-
----
-
-*本文档持续更新中...*
+*框架原理见 [frame.md](./frame.md)；各阶段完整示例配置见 `examples/`；数据集格式见 `data/dataset_info.json`。*

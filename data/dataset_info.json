@@ -745,5 +745,17 @@
       "prompt": "content"
     },
     "folder": "python"
+  },
+  "domain_papers": {
+    "file_name": "domain_papers.jsonl",
+    "columns": {
+      "prompt": "text"
+    }
+  },
+  "domain_papers_eval": {
+    "file_name": "domain_papers_eval.jsonl",
+    "columns": {
+      "prompt": "text"
+    }
   }
 }

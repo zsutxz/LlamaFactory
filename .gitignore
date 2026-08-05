@@ -195,3 +195,6 @@ model/qwen3-1.7B/
 *.pt
 .heagent/
 .session-resume/
+data/domain_papers_eval.jsonl
+data/domain_papers_stats.txt
+data/domain_papers.jsonl

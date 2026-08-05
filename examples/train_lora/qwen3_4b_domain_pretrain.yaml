@@ -1,5 +1,5 @@
 ### 领域继续预训练（PT）：把专业文档/论文灌进 Qwen3-4B
-### 生成：scripts/build_domain_corpus.py（Book PDF + AI Agent 课程 + 论文笔记）
+### 生成：scripts/data/build_domain_corpus.py（Book PDF + AI Agent 课程 + 论文笔记）
 ### 训练集：data/domain_papers.jsonl（336 块，约 14.7 万 token）
 ### 验证集：data/domain_papers_eval.jsonl（38 块，约 1.4 万 token）
 

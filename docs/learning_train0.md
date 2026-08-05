@@ -6,17 +6,6 @@
 
 ---
 
-## 1. 本次结论（TL;DR）
-
-- 用 **LoRA 继续预训练** 把 18 份领域文档/论文（约 65 万字符）注入 Qwen3-4B，训练 45 步（5 epochs）约 35 分钟，16GB 显存刚好跑满。
-- 验证集困惑度 **PPL 18.80 → 12.82（↓ 32%）**；续写质量明显改善（不再臆造模型名、能接续领域术语与文风）。
-- 踩到并解决两个本机必踩的坑：
-  1. 默认 HF 缓存目录 `~/.cache/huggingface/datasets` 无法写入 → `datasets` 卡在文件锁上 15 分钟+；
-  2. Windows 下 `preprocessing_num_workers` 设 0 或 >1 都会出问题 → 统一设 1。
-- 重要认知：PT 注入的是「知识 + 语言风格」，不是「问答能力」；要能回答领域问题还需继续做 SFT。
-
----
-
 ## 脚本与工具约定
 
 > 原则：**只有「数据处理 / 清洗」才自写脚本，统一放 `scripts/data/`；训练、评估、推理等其他流程一律用 LLaMA-Factory 原生能力。**
@@ -28,7 +17,18 @@
 | PPL 评估 | `scripts/stat_utils/cal_ppl.py`（LF 自带） | `stage=pt`，按注册数据集名加载，口径与训练同源 |
 | 续写 / 推理 | `llamafactory-cli chat` | 交互式喂前缀看续写 |
 
-> `eval_ppl.py`、`continue_text.py`、`run_domain_pretrain.ps1` 均已删除（分别改用 LF 自带 `stat_utils/cal_ppl.py`、`llamafactory-cli chat`、本节下方第 6.2 节的 env+train 命令）；训练/评估/推理现全部走 LLaMA-Factory 原生能力。另：`llamafactory-cli eval` 在本版本（0.9.x）已废弃，故评估走 `stat_utils/cal_ppl.py`。
+> 以下所有 `train` / `chat` / `cal_ppl.py` 命令都需先设三项环境变量：`PYTHONUTF8=1`、`HF_HOME=E:\AI\LLaMA-Factory\hf_cache`、`HF_HUB_OFFLINE=1`（理由见第 5 节坑 1）。各命令块为可独立拷贝运行，故重复列出。
+
+---
+
+## 1. 本次结论（TL;DR）
+
+- 用 **LoRA 继续预训练** 把 18 份领域文档/论文（约 65 万字符）注入 Qwen3-4B，训练 45 步（5 epochs）约 35 分钟，16GB 显存刚好跑满。
+- 验证集困惑度 **PPL 18.49 → 12.56（↓ 32%，均为训练内评、可复现）**；续写能稳定接续领域术语与文风（定性观察）。
+- 踩到并解决两个本机必踩的坑：
+  1. 默认 HF 缓存目录 `~/.cache/huggingface/datasets` 无法写入 → `datasets` 卡在文件锁上 15 分钟+；
+  2. Windows 下 `preprocessing_num_workers` 设 0 或 >1 都会出问题 → 统一设 1。
+- 重要认知：PT 注入的是「知识 + 语言风格」，不是「问答能力」；要能回答领域问题还需继续做 SFT。
 
 ---
 
@@ -152,7 +152,7 @@ $env:PYTHONUTF8='1'; $env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'; $env:HF_HUB_OF
   output_dir=saves\Qwen3-4B-domain\lora\pt_smoke
 ```
 
-结果：3 步 141 秒，训练损失 2.87 → 2.85，验证 PPL 18.49（对照基座 18.80），管线全通。
+结果：3 步 141 秒，训练损失 2.87 → 2.85，验证 PPL 18.49（即第 7.1 节「训练初期」对照值），管线全通。
 
 ### 6.2 正式训练（45 步 / 5 epochs / 35 分钟）
 
@@ -185,41 +185,32 @@ $env:PYTHONUTF8='1'; $env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'; $env:HF_HUB_OF
 
 ## 7. 效果评估
 
-### 7.1 困惑度（PPL）：训练前 vs 训练后
+### 7.1 困惑度（PPL）：训练初期 → 训练后
 
-推荐用 **LF 自带** `scripts/stat_utils/cal_ppl.py`（`stage=pt`，按注册数据集名加载，与训练同源）：
+PPL 以**训练内评**为准（`eval_steps` 在 `domain_papers_eval` 上算，与训练同源、可复现）：
+
+| 指标 | 训练初期（冒烟 step3） | 训练后（45 步） | 变化 |
+|------|------------------------|-----------------|------|
+| eval loss | ≈2.92 | 2.5304 | ↓ |
+| PPL | 18.49 | 12.56 | **↓ 32%** |
+
+> 若需独立的**基座基线** PPL（训练内评只覆盖训练后），用 LF 自带 `scripts/stat_utils/cal_ppl.py`（与训练同源）：
 
 ```powershell
-# 训练前（基座）对照
 & "C:\Users\skype\.conda\envs\llama-factory\python.exe" scripts\stat_utils\cal_ppl.py `
   --model_name_or_path model/Qwen3-4B --stage pt --dataset domain_papers_eval --save_name ppl_base.json
 ```
 
-> 训练后 PPL 直接看训练内评估（`eval_steps` 已在 `domain_papers_eval` 上算，与训练同源最准，见表格备注）。下表两列是早期用 `eval_ppl.py`（直接 `tokenizer.encode` + 整段 CE，未走 LF template）测得，**该脚本已删除**；若要可复现的对照，请用 `stat_utils/cal_ppl.py` 重算。
+### 7.2 续写验证（定性）
 
-| 指标 | 训练前 | 训练后 | 变化 |
-|------|--------|--------|------|
-| CE loss | 2.9340 | 2.5513 | ↓ |
-| PPL | 18.80 | 12.82 | **↓ 32%** |
-
-（LLaMA-Factory 训练内评：eval_loss 2.5304 / PPL 12.56，与独立脚本口径略有差异，趋势一致。）
-
-### 7.2 续写对比（定性）
-
-推荐 `llamafactory-cli chat`（加载基座 + adapter 后交互式续写）：
+用 `llamafactory-cli chat` 加载基座 + adapter，交互式喂前缀看续写：
 
 ```powershell
 & "C:\Users\skype\.conda\envs\llama-factory\Scripts\llamafactory-cli.exe" chat `
   examples\train_lora\qwen3_4b_domain_pretrain.yaml adapter_name_or_path=saves\Qwen3-4B-domain\lora\pt
 ```
 
-> 下表是早期用 `continue_text.py`（取验证集前 3 段开头做前缀，温度 0.8、top_p 0.9）测得，**该脚本已删除**；新流程用 `llamafactory-cli chat` 手动续写。
-
-| 前缀 | 训练前 | 训练后 |
-|------|--------|--------|
-| "Multimodal memory" is a crucial concept... | 臆造出 "Memory-Enhanced Multimodal Transformer (MEMT)" | 自然接续：VQA、视觉推理、多模态对话等真实领域表述 |
-| Use the open-source MCP Toolbox for Databases... | 怀疑「这个工具不存在」，泛泛而谈 JDBC | 直接续写支持 SQL/Oracle/MongoDB、监控告警等该工具的功能 |
-| ...properties such as title and description may be optional in the schema... | 偏题的 API 建议 | 继续给出符合原文风格的 JSON schema 示例 |
+> 验证方法：取验证集某段开头做前缀，对比「直接基座 chat」（不加 `adapter_name_or_path`）与「加载 adapter 后」的续写。
 
 ### 7.3 训练动态观察
 
@@ -240,31 +231,41 @@ $env:PYTHONUTF8='1'; $env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'; $env:HF_HUB_OF
 
 ---
 
-## 9. 复现清单（换语料重跑）
+## 9. 复现清单
+
+> 以下命令在同一 PowerShell 会话里顺序执行。三项环境变量对**所有步骤**都必需（理由见第 5 节坑 1），故单列一步。
 
 ```powershell
-# 1) 把新 PDF/文档放到某目录，改 scripts/data/build_domain_corpus.py 的 SRC_PDF_DIRS
-# 2) 重新构建语料（用带 pymupdf 的解释器，如 base Anaconda）
+# 1) 构建语料（用带 pymupdf 的解释器，如 base Anaconda；llama-factory 环境无 pymupdf）
 python scripts\data\build_domain_corpus.py
-# 3) 训练（本机两个 env 修复必须带，否则 datasets 卡死 15 分钟+）
+
+# 2) 设环境变量（同会话生效，后续 train / cal_ppl / chat 都依赖）
 $env:PYTHONUTF8='1'; $env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'; $env:HF_HUB_OFFLINE='1'
+
+# 3) 训练
 & "C:\Users\skype\.conda\envs\llama-factory\Scripts\llamafactory-cli.exe" train `
   examples\train_lora\qwen3_4b_domain_pretrain.yaml
-# 4) 评估（PPL 用 LF 自带 cal_ppl.py；续写用 llamafactory-cli chat）
+
+# 4) 基座 PPL 对照（训练后 PPL 直接看训练内评，见 §7.1）
 & "C:\Users\skype\.conda\envs\llama-factory\python.exe" scripts\stat_utils\cal_ppl.py `
   --model_name_or_path model/Qwen3-4B --stage pt --dataset domain_papers_eval --save_name ppl_base.json
+
+# 5) 续写验证（加载 adapter）
 & "C:\Users\skype\.conda\envs\llama-factory\Scripts\llamafactory-cli.exe" chat `
   examples\train_lora\qwen3_4b_domain_pretrain.yaml adapter_name_or_path=saves\Qwen3-4B-domain\lora\pt
 ```
+
+**换语料时改这 5 处**：`build_domain_corpus.py` 的源目录（`SRC_PDF_DIRS` / `SRC_PAPER_ROOT`）→ `data/dataset_info.json` 注册新数据集名 → yaml 的 `dataset` 与 `output_dir` → 步骤 4 的 `--dataset` → 步骤 5 的 `adapter_name_or_path`。
+
+---
 
 ## 10. 产物文件清单
 
 | 文件 | 作用 |
 |------|------|
-| `scripts/data/build_domain_corpus.py` | 语料构建（PDF/md/html → jsonl 训练/验证集） |
+| `scripts/data/build_domain_corpus.py` | 语料构建脚本（PDF/md/html → jsonl 训练/验证集 + 统计） |
 | `data/domain_papers.jsonl` / `domain_papers_eval.jsonl` | 训练 / 验证数据 |
-| `data/dataset_info.json`（新增条目） | 数据集注册 |
+| `data/domain_papers_stats.txt` | 语料统计（文档数 / 切块数 / 字符数） |
+| `data/dataset_info.json`（新增条目） | 数据集注册（追加 `domain_papers` / `domain_papers_eval`） |
 | `examples/train_lora/qwen3_4b_domain_pretrain.yaml` | 训练配置（带注释） |
-| `scripts/stat_utils/cal_ppl.py` | LF 自带 PPL 评估（推荐口径） |
-| `saves/Qwen3-4B-domain/lora/pt` | 训练产物（adapter + 曲线 + 指标） |
-| `docs/learning.md` | 原学习指南（第 1 章已更新为实测记录） |
+| `saves/Qwen3-4B-domain/lora/pt` | 训练产物（adapter + checkpoint-30/40/45 + 曲线 + 指标） |

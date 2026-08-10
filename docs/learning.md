@@ -238,7 +238,7 @@ llamafactory-cli train examples/train_lora/qwen3_pt.yaml   # 你的配置路径
 
 | 坑 | 现象 | 处理 |
 |----|------|------|
-| 默认 HF 缓存目录写不进 | `datasets` 卡死 15 分钟+（filelock 无限重试，因为 `C:\Users\skype\.cache\huggingface\datasets` 拒绝创建文件） | 命令前加 `$env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'`（仓库 `.gitignore` 已忽略 `hf_cache/`）。**所有**用 datasets 的 LF 命令都要带（完整训练命令见 `learning_train0.md` 第 6.2 节）。 |
+| 默认 HF 缓存目录写不进 | `datasets` 卡死 15 分钟+（filelock 无限重试，因为 `C:\Users\skype\.cache\huggingface\datasets` 拒绝创建文件） | 命令前加 `$env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'`（仓库 `.gitignore` 已忽略 `hf_cache/`）。**所有**用 datasets 的 LF 命令都要带（完整训练命令见 `learning_train_list.md` 第 10 节（动手清单））。 |
 | Windows 多进程预处理 | `preprocessing_num_workers: 0` 报 `ValueError`；`>1` 时 spawn 卡死 | 统一设 **1**（语料小，无性能损失） |
 
 ---

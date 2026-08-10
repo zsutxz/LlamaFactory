@@ -1,0 +1,10 @@
+# Qwen3-8B（领域 PT）续写/推理配置：4-bit 量化；仅模型键（chat 的 infer 解析器不接受训练专用键，故独立于 train yaml）
+# base  续写: llamafactory-cli chat examples/inference/qwen3_8b_domain_chat.yaml
+# adapter续写: 上行末尾加 adapter_name_or_path=saves/Qwen3-8B-domain/lora/pt
+# template 用 qwen3_nothink 关思维链，base 模型续写更干净（PT 只灌风格/知识，不教问答）
+model_name_or_path: model/Qwen3-8B
+quantization_bit: 4
+quantization_method: bnb
+template: qwen3_nothink
+infer_backend: huggingface
+trust_remote_code: true

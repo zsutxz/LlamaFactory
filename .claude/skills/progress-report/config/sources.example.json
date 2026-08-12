@@ -1,0 +1,66 @@
+[
+  {
+    "_comment": "示例 1：禅道(Zentao)风格。账号/密码字段名 account/password；登录页隐藏域(CSRF)脚本自动捕获。URL 为占位，改成你的真实地址。",
+    "name": "禅道-我的任务",
+    "base_url": "https://pm.example.com/zentao",
+    "login": {
+      "url": "https://pm.example.com/zentao/user-login.html",
+      "method": "POST",
+      "username_field": "account",
+      "password_field": "password",
+      "success_marker": "退出"
+    },
+    "credentials": {
+      "username_env": "PROGRESS_ZENTAO_USER",
+      "password_env": "PROGRESS_ZENTAO_PASS"
+    },
+    "fetch": {
+      "url": "https://pm.example.com/zentao/my-work-task.html",
+      "method": "GET"
+    },
+    "extract": {
+      "key_header": "任务名称",
+      "columns": {
+        "任务名称": "title",
+        "指派给": "owner",
+        "状态": "status",
+        "进度": "progress_raw",
+        "截止日期": "deadline"
+      }
+    },
+    "done_status": ["已完成", "已关闭"],
+    "progress_regex": "(\\d+)\\s*%"
+  },
+  {
+    "_comment": "示例 2：Redmine 风格。字段名 username/password；CSRF(authenticity_token)自动捕获。",
+    "name": "Redmine-我的Issue",
+    "base_url": "https://redmine.example.com",
+    "login": {
+      "url": "https://redmine.example.com/login",
+      "method": "POST",
+      "username_field": "username",
+      "password_field": "password",
+      "success_marker": "Sign out"
+    },
+    "credentials": {
+      "username_env": "PROGRESS_REDMINE_USER",
+      "password_env": "PROGRESS_REDMINE_PASS"
+    },
+    "fetch": {
+      "url": "https://redmine.example.com/issues?set_filter=1&assigned_to_id=me&status_id=open",
+      "method": "GET"
+    },
+    "extract": {
+      "key_header": "Subject",
+      "columns": {
+        "Subject": "title",
+        "Assignee": "owner",
+        "Status": "status",
+        "Done": "progress_raw",
+        "Due date": "deadline"
+      }
+    },
+    "done_status": ["Closed", "Resolved"],
+    "progress_regex": "(\\d+)\\s*%"
+  }
+]

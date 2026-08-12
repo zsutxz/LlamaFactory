@@ -198,3 +198,8 @@ model/qwen3-1.7B/
 data/domain_papers_eval.jsonl
 data/domain_papers_stats.txt
 data/domain_papers.jsonl
+data_raw/
+
+# progress-report skill：真实配置(可能含内网URL)与输出报表不入库；凭据在 .env(已覆盖)
+config/sources.json
+progress_report/

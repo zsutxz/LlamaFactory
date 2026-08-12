@@ -757,5 +757,17 @@
     "columns": {
       "prompt": "text"
     }
+  },
+  "domain_env": {
+    "file_name": "domain_env.jsonl",
+    "columns": {
+      "prompt": "text"
+    }
+  },
+  "domain_env_eval": {
+    "file_name": "domain_env_eval.jsonl",
+    "columns": {
+      "prompt": "text"
+    }
   }
 }

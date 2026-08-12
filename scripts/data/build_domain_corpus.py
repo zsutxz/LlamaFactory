@@ -1,18 +1,23 @@
 # -*- coding: utf-8 -*-
 """Build a continued-pretraining corpus from local professional docs & papers.
 
-Sources:
-  - E:\\AI\\Book\\*.pdf                        (专业文档/论文手册)
-  - E:\\AI\\teach-fish-to-swim\\**            (英文论文全文: md/html)
+两种用法：
 
-Output (LLaMA-Factory PT 数据集):
-  - data/domain_papers.jsonl       训练集
-  - data/domain_papers_eval.jsonl  验证集(每 10 块留 1 块)
+1) 默认模式(原 AI-agents 领域，硬编码源，无参即等价旧行为)：
+   python scripts/data/build_domain_corpus.py
+   源: E:\\AI\\Book\\*.pdf, E:\\AI\\5-Day-AI-Agents-Intensive-Course-with-Google-2025\\*.pdf,
+       E:\\AI\\teach-fish-to-swim\\** 的 raw-content.md / index.html
+   出: data/domain_papers.jsonl / _eval.jsonl / _stats.txt
 
-用法(用带 PyMuPDF 的解释器运行,在仓库根目录下):
-  python scripts/data/build_domain_corpus.py
+2) 目录扫描模式(供 env-docs-collector 采集的 data_raw 用)：
+   python scripts/data/build_domain_corpus.py --src data_raw --out-prefix domain_env
+   源: 递归扫描 --src 下的 *.md / *.html / *.pdf (跳过 _ 前缀元数据文件)
+   出: data/<prefix>.jsonl / _eval.jsonl / _stats.txt
+
+需 PyMuPDF(解析 PDF) + BeautifulSoup(解析 HTML)；缺 PDF 库时自动跳过 PDF。
 """
 
+import argparse
 import glob
 import hashlib
 import html
@@ -34,6 +39,7 @@ OUT_STATS = os.path.join(OUT_DIR, "domain_papers_stats.txt")
 CHUNK_CHARS = 1800  # 每块目标字符数(约 1000~1500 token)
 MIN_CHUNK_CHARS = 150
 EVAL_EVERY = 10  # 每 10 块留 1 块做验证
+TEXT_EXT = {".pdf", ".html", ".htm", ".md", ".markdown", ".txt"}
 
 
 def pdf_text(path):
@@ -61,6 +67,23 @@ def html_text(path):
         raw = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
         raw = re.sub(r"(?s)<[^>]+>", " ", raw)
         return html.unescape(raw)
+
+
+def md_text(path):
+    text = open(path, encoding="utf-8", errors="ignore").read()
+    text = re.sub(r"\A---\n.*?\n---\n", "", text, count=1, flags=re.S)  # 去 YAML frontmatter
+    return text
+
+
+def read_any(path):
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".pdf":
+        return pdf_text(path)
+    if ext in (".html", ".htm"):
+        return html_text(path)
+    if ext in (".md", ".markdown", ".txt"):
+        return md_text(path)
+    return None
 
 
 def clean(text):
@@ -101,6 +124,7 @@ def chunk_text(text, max_chars=CHUNK_CHARS):
 
 
 def collect_documents():
+    """默认模式：从硬编码的专业文档/论文目录收集(原 AI-agents 领域)。"""
     docs = []  # (来源, 文本)
 
     # 1) 专业文档/论文 PDF
@@ -132,9 +156,42 @@ def collect_documents():
     return docs
 
 
+def collect_from_tree(root):
+    """目录扫描模式：递归收集 root 下的 md/html/pdf（跳过 _ 前缀元数据文件）。"""
+    docs = []
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for fn in sorted(filenames):
+            if fn.startswith("_"):  # _catalog.md / _fetch_list.json / _manifest.jsonl
+                continue
+            if os.path.splitext(fn)[1].lower() not in TEXT_EXT:
+                continue
+            path = os.path.join(dirpath, fn)
+            try:
+                text = read_any(path)
+                if text and text.strip():
+                    docs.append((os.path.relpath(path, root), text))
+                else:
+                    print(f"[skip] 内容为空 {path}")
+            except Exception as exc:
+                print(f"[skip] 读取失败 {path}: {exc}")
+    return docs
+
+
 def main():
-    os.makedirs(OUT_DIR, exist_ok=True)
-    docs = collect_documents()
+    ap = argparse.ArgumentParser(description="构建领域继续预训练语料(切块+去重+划分训练/验证)")
+    ap.add_argument("--src", default=None,
+                    help="源目录(递归扫描 md/html/pdf)；不给则用默认硬编码源(原 AI-agents 领域)")
+    ap.add_argument("--out-prefix", default="domain_papers", help="输出文件名前缀(默认 domain_papers)")
+    ap.add_argument("--data-dir", default=OUT_DIR, help=f"输出目录(默认 {OUT_DIR})")
+    args = ap.parse_args()
+
+    out_dir = args.data_dir
+    out_train = os.path.join(out_dir, f"{args.out_prefix}.jsonl")
+    out_eval = os.path.join(out_dir, f"{args.out_prefix}_eval.jsonl")
+    out_stats = os.path.join(out_dir, f"{args.out_prefix}_stats.txt")
+
+    os.makedirs(out_dir, exist_ok=True)
+    docs = collect_from_tree(args.src) if args.src else collect_documents()
     print(f"收集到 {len(docs)} 份文档")
 
     all_chunks = []
@@ -169,8 +226,8 @@ def main():
             for _, chunk in items:
                 f.write(json.dumps({"text": chunk}, ensure_ascii=False) + "\n")
 
-    write(OUT_TRAIN, train_chunks)
-    write(OUT_EVAL, eval_chunks)
+    write(out_train, train_chunks)
+    write(out_eval, eval_chunks)
 
     total_chars = sum(len(c) for _, c in unique)
     stats = (
@@ -181,11 +238,11 @@ def main():
         f"总字符数: {total_chars:,}\n"
         f"平均每块字符: {total_chars // max(len(unique), 1)}\n"
     )
-    with open(OUT_STATS, "w", encoding="utf-8") as f:
+    with open(out_stats, "w", encoding="utf-8") as f:
         f.write(stats)
     print(stats)
-    print("训练集:", OUT_TRAIN)
-    print("验证集:", OUT_EVAL)
+    print("训练集:", out_train)
+    print("验证集:", out_eval)
 
 
 if __name__ == "__main__":

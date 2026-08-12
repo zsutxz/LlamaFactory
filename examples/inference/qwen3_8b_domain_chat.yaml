@@ -1,10 +1,14 @@
 # Qwen3-8B（领域 PT）续写/推理配置：4-bit 量化；仅模型键（chat 的 infer 解析器不接受训练专用键，故独立于 train yaml）
 # base  续写: llamafactory-cli chat examples/inference/qwen3_8b_domain_chat.yaml
 # adapter续写: 上行末尾加 adapter_name_or_path=saves/Qwen3-8B-domain/lora/pt
-# template 用 qwen3_nothink 关思维链，base 模型续写更干净（PT 只灌风格/知识，不教问答）
+# 关思维链：template 用 qwen3（ReasoningTemplate）+ enable_thinking:false
+# 坑：qwen3_nothink 在 chat 推理路径关不掉 think——它未挂 ReasoningTemplate（template.py:2005），
+#   且 _nothink 后缀只是命名提示，get_template 不据此设 enable_thinking（template.py:656-665）。
+#   正确机制：enable_thinking=False 时往生成点注入 <think>\n\n</think>\n\n（template.py:431-432），与官方 jinja 一致。
 model_name_or_path: model/Qwen3-8B
 quantization_bit: 4
 quantization_method: bnb
-template: qwen3_nothink
+template: qwen3
+enable_thinking: false
 infer_backend: huggingface
 trust_remote_code: true

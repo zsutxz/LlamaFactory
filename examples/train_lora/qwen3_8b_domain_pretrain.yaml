@@ -1,7 +1,8 @@
-### 领域继续预训练（PT）：把专业文档/论文灌进 Qwen3-8B
-### 生成：scripts/data/build_domain_corpus.py（Book PDF + AI Agent 课程 + 论文笔记）
-### 训练集：data/domain_papers.jsonl（336 块，约 14.7 万 token）
-### 验证集：data/domain_papers_eval.jsonl（38 块，约 1.4 万 token）
+### 领域继续预训练（PT）：把「环境保护」语料灌进 Qwen3-8B（4-bit QLoRA）
+### 生成：scripts/data/build_domain_corpus.py --src data_raw --out-prefix domain_env
+###       原始语料由 .claude/skills/env-docs-collector 采集（法律法规/行业标准/论文，见 data_raw/）
+### 训练集：data/domain_env.jsonl（567 块，中文为主，约 55 万 token）
+### 验证集：data/domain_env_eval.jsonl（64 块，约 6 万 token）
 
 ### model
 model_name_or_path: model/Qwen3-8B      # 本地基座（完整 bf16 权重，训练时按 4-bit 量化加载）
@@ -18,14 +19,14 @@ lora_alpha: 16                          # 缩放倍率 = alpha / rank = 2
 lora_target: all                        # 挂在所有线性层上（可训练 21.8M / 82 亿 = 0.27%）
 
 ### dataset
-dataset: domain_papers                  # dataset_info.json 里注册的训练集
-eval_dataset: domain_papers_eval        # 留出的验证集（算 loss 转 PPL 用）
+dataset: domain_env                     # dataset_info.json 里注册的训练集（环保领域）
+eval_dataset: domain_env_eval           # 留出的验证集（算 loss 转 PPL 用）
 cutoff_len: 2048                        # 单个训练窗口的 token 上限
 preprocessing_num_workers: 1            # Windows 下多进程 map 会卡死，1 = 单进程（语料小够用）
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3-8B-domain/lora/pt
+output_dir: saves/Qwen3-8B-domain-env/lora/pt   # 与 domain_papers 产物分离，避免 overwrite_output_dir 互相覆盖
 logging_steps: 1
 save_steps: 10                          # 每 10 步存一个 checkpoint，防中断丢进度
 save_total_limit: 3

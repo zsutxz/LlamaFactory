@@ -39,7 +39,7 @@ OUT_STATS = os.path.join(OUT_DIR, "domain_papers_stats.txt")
 CHUNK_CHARS = 1800  # 每块目标字符数(约 1000~1500 token)
 MIN_CHUNK_CHARS = 150
 EVAL_EVERY = 10  # 每 10 块留 1 块做验证
-TEXT_EXT = {".pdf", ".html", ".htm", ".md", ".markdown", ".txt"}
+TEXT_EXT = {".pdf", ".html", ".htm", ".md", ".markdown", ".txt", ".xml"}
 
 
 def pdf_text(path):
@@ -81,7 +81,7 @@ def read_any(path):
         return pdf_text(path)
     if ext in (".html", ".htm"):
         return html_text(path)
-    if ext in (".md", ".markdown", ".txt"):
+    if ext in (".md", ".markdown", ".txt", ".xml"):
         return md_text(path)
     return None
 

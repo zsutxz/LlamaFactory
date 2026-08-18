@@ -3,11 +3,11 @@
 """批量下载环保资料到 data_raw/<category>/，并写幂等清单 _manifest.jsonl。
 
 输入清单(JSON 数组)，每项:
-  {"category": "laws|standards|papers", "title": "...", "url": "...", "kind": "pdf|html"}
+  {"category": "laws|standards|papers", "title": "...", "url": "...", "kind": "pdf|xml|txt|md"}
 
 下载后端: curl 优先(Windows 自动 --ssl-no-revoke 规避 schannel 吊销检查) → urllib 兜底。
 幂等: 已成功(ok/skip)或永久失败(invalid)的 URL 跳过；网络 fail 下次重试。
-校验: PDF 须以 %PDF 开头，否则判 fail(避免把 403 错误页存成假 PDF)。
+校验: PDF 须以 %PDF 开头；xml/txt/md 拒收疑似 HTML 页面(避免把 403 错误页存成假文件)。
 
 用法:
   python fetch_docs.py [--data-raw ./data_raw] [--list ./data_raw/_fetch_list.json]
@@ -25,6 +25,7 @@ import urllib.request
 
 DEFAULT_DATA_RAW = os.path.join(os.getcwd(), "data_raw")
 ALLOWED_CATEGORY = {"laws", "standards", "papers"}
+ALLOWED_KIND = {"pdf", "xml", "txt", "md"}
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -38,8 +39,7 @@ def safe_name(title, kind):
     """标题 → 安全文件名。"""
     name = re.sub(r"[\\/:*?\"<>|]+", "_", title or "").strip().strip(".")
     name = re.sub(r"\s+", "_", name) or "unnamed"
-    ext = "pdf" if kind == "pdf" else "html"
-    return f"{name}.{ext}"
+    return f"{name}.{kind}"
 
 
 def load_skip_hashes(mani_path):
@@ -84,6 +84,8 @@ def validate(data, kind):
         raise ValueError("内容过短(疑似错误页)")
     if kind == "pdf" and not data.startswith(b"%PDF"):
         raise ValueError("非 PDF(疑似 403/错误页)")
+    if kind != "pdf" and re.match(rb"\s*<(?:!doctype\s+html|html[\s>])", data, re.I):
+        raise ValueError(f"疑似 HTML 页面(非 {kind})")
 
 
 def main():
@@ -121,12 +123,18 @@ def main():
                 continue
             processed.add(url_hash)
 
-            # 2) 非法 category → 永久失败 invalid(下次自动跳过)
+            # 2) 非法 category/kind → 永久失败 invalid(下次自动跳过)
             if cat not in ALLOWED_CATEGORY:
-                record.update(status="invalid", error=f"非法 category: {cat}")
+                reason = f"非法 category: {cat}"
+            elif kind not in ALLOWED_KIND:
+                reason = f"非法 kind: {kind}(仅允许 pdf/xml/txt/md)"
+            else:
+                reason = None
+            if reason:
+                record.update(status="invalid", error=reason)
                 mani.write(json.dumps(record, ensure_ascii=False) + "\n")
                 counts["fail"] += 1
-                print(f"[invalid] {title or url}: 非法 category {cat}")
+                print(f"[invalid] {title or url}: {reason}")
                 continue
 
             # 3) 文件已存在且非空 → 登记为 skip

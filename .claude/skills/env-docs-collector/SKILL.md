@@ -32,20 +32,22 @@ examples:
 ## 输出布局
 ```
 data_raw/
-  laws/             # *.pdf / *.md  法律法规全文
-  standards/        # *.pdf / *.md  环境标准(GB 强制 / HJ 行业)
-  papers/           # *.pdf         论文(优先开放获取)
+  laws/             # 法律法规全文
+  standards/        # 环境标准(GB 强制 / HJ 行业)
+  papers/           # 论文(优先开放获取)
   _fetch_list.json  # 本次下载清单(脚本输入, Claude 生成)
   _manifest.jsonl   # 下载记录(脚本输出, 幂等去重)
 ```
+
+> **落盘格式仅限 `pdf` / `xml` / `txt` / `md` 四种**：网页正文须先转成 markdown 再落盘，禁止下载/保存 `.html` 及其他格式。
 
 ## 工作流（Claude 按序执行）
 1. **定范围**：与用户确认每类要几份、是否含国际标准(ISO 14000)、语言(中/英)。默认套餐 = 核心法律 ~10 部 + 基础环境质量标准(GB) + 少量 arXiv 开放论文。
 2. **找源**：按下方"权威来源门户"用 `WebSearch` 或已知门户 URL 定位具体文档页。
    > ⚠️ WebSearch 仅美国区，中文检索可能稀疏；优先**直接用已知门户 URL 导航**，用 `mcp__web_reader__webReader` 读页面再取下载直链。
-3. **取正文**：
-   - **PDF**：拿到 `.pdf` 直链 → 追加进 `data_raw/_fetch_list.json`(`kind=pdf`)，交给脚本下载。
-   - **网页正文**：用 `mcp__web_reader__webReader` 抓成 markdown → `Write` 直接落盘 `data_raw/<cat>/<名>.md`；或把页面 URL 列入清单(`kind=html`)由脚本拉原始 HTML。
+3. **取正文**（落盘仅限 pdf/xml/txt/md）：
+   - **直链文件**：拿到 `.pdf`/`.xml`/`.txt`/`.md` 直链 → 追加进 `data_raw/_fetch_list.json`(`kind=pdf|xml|txt|md`)，交给脚本下载。
+   - **网页正文**：用 `mcp__web_reader__webReader` 抓成 markdown → `Write` 直接落盘 `data_raw/<cat>/<名>.md`；网页 URL **不得**列入清单下载原始 HTML。
 4. **批量下载**：运行
    `python .claude/skills/env-docs-collector/scripts/fetch_docs.py`
    读取 `_fetch_list.json`，下载到对应子目录，幂等写 `_manifest.jsonl`（已下载且文件存在则跳过，限速 1s/请求）。
@@ -98,11 +100,13 @@ data_raw/
   {"category": "papers",    "title": "Deep learning for air quality",  "url": "https://arxiv.org/pdf/xxxx.pdf",     "kind": "pdf"}
 ]
 ```
+`kind` 仅允许 `pdf | xml | txt | md`；其他取值(含 `html`)脚本记 invalid 永久跳过。
 
 ## 脚本
 `scripts/fetch_docs.py` — 读 `data_raw/_fetch_list.json`，按 `category` 下载到 `data_raw/<category>/`，幂等写 `_manifest.jsonl`。
 - **下载后端**：curl 优先(Windows 自动带 `--ssl-no-revoke` 规避 schannel 吊销检查) → urllib 兜底。
-- **校验**：PDF 须以 `%PDF` 开头，否则记 fail——防止把 403 错误页存成假 PDF。
+- **格式限制**：`kind` 仅允许 `pdf/xml/txt/md`，其他取值(含 `html`)记 invalid 永久跳过。
+- **校验**：PDF 须以 `%PDF` 开头；xml/txt/md 内容若疑似 HTML 页面则记 fail——防止把 403 错误页存成假文件。
 - **幂等语义**：`ok/skip/invalid` 的 URL 下次跳过(不重下、不重写行)；`fail`(网络/校验) 下次**重试**。
 用法（在仓库根目录）：
 ```bash

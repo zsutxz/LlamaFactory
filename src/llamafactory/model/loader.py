@@ -197,12 +197,20 @@ def load_model(
     # Conv3D is not recommended when using torch 2.9.x
     if is_torch_version_greater_than("2.9.0") and not is_torch_version_greater_than("2.10.0"):
         if any(isinstance(m, torch.nn.Conv3d) for m in model.modules()):
-            raise ValueError(
-                "Unsupported torch version detected: torch 2.9.x with Conv3D. "
-                "This combination is known to cause severe performance regression. "
-                "Please downgrade torch to <2.9 or remove Conv3D. "
-                "See https://github.com/pytorch/pytorch/issues/166122"
-            )
+            if os.environ.get("LF_ALLOW_TORCH29_CONV3D", "0") == "1":
+                # 逃生口：纯文本训练/推理时 Conv3D 不会被执行，性能回归无法触发
+                logger.warning_rank0(
+                    "LF_ALLOW_TORCH29_CONV3D=1: bypassing torch 2.9.x Conv3D guard. "
+                    "Only safe when no image/video inputs are processed (e.g. text-only training)."
+                )
+            else:
+                raise ValueError(
+                    "Unsupported torch version detected: torch 2.9.x with Conv3D. "
+                    "This combination is known to cause severe performance regression. "
+                    "Please downgrade torch to <2.9 or remove Conv3D. "
+                    "See https://github.com/pytorch/pytorch/issues/166122. "
+                    "For text-only workloads set LF_ALLOW_TORCH29_CONV3D=1 to bypass."
+                )
 
     if not is_trainable:
         model.requires_grad_(False)

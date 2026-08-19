@@ -217,5 +217,6 @@ data/domain_env_qa_compare.jsonl
 data/domain_env_qa_compare_report.md
 data/domain_env_qa_review.md
 data/domain_env_qa_stats.txt
-/model/          # 仅根目录的模型权重目录(锚定,避免误伤 src/llamafactory/model 包)
+# 仅根目录的模型权重目录(锚定,避免误伤 src/llamafactory/model 包；gitignore 不支持行内注释)
+/model/
 .agents/skills/progress-report/config/sources.example.json

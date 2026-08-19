@@ -2,6 +2,7 @@
 
 > 本文档记录在本机（Windows + conda）上手使用 LLaMA-Factory 的**完整实操流程**。
 > 框架原理（目录结构 / 核心模块 / 配置 / 概念 / 代码位置）见 [frame.md](./frame.md)。
+> 领域 PT（4B/8B/9B）与蒸馏闭环的完整实测记录见 [learning_train_list.md](./learning_train_list.md)。
 
 ---
 
@@ -18,7 +19,7 @@
 | 2 | 监督微调 SFT | `stage: sft` | 指令-回答对 | ✅ 已实测 |
 | 3 | 偏好对齐 DPO | `stage: dpo` | chosen/rejected 对 | ⚠️ 未实测 |
 | 4 | 推理 | `llamafactory-cli chat` | — | ✅ 已实测 |
-| 5 | 蒸馏 | **LF 无独立阶段** = 强模型生成数据→SFT | teacher 生成 | ⚠️ 未实测 |
+| 5 | 蒸馏 | **LF 无独立阶段** = 强模型生成数据→SFT | teacher 生成 | ✅ 已实测 |
 | 6 | 评估 | `train` + `do_predict:true` | 同训练集 | ✅ 已实测 |
 | 7 | 导出 | `llamafactory-cli export` | — | ✅ 已实测 |
 
@@ -207,39 +208,9 @@ llamafactory-cli train examples/train_lora/qwen3_pt.yaml   # 你的配置路径
 
 ### 1.5 实测记录（Qwen3-4B + 领域论文/文档，2026-08-03）
 
-**语料构建**（`scripts/data/build_domain_corpus.py`）：
-
-- 来源：`E:\AI\Book`（AI演义 36 篇论文、提示词工程手册、Paper2Agent）+ `E:\AI\5-Day-AI-Agents-Intensive-Course-with-Google-2025`（6 份课程 PDF）+ `E:\AI\teach-fish-to-swim`（论文全文/笔记），共 **18 份文档**。
-- 处理：PDF/md/html → 清洗（去链接/装饰符号/重复行）→ 按段落切成约 1800 字符的块 → 哈希去重 → 固定种子洗牌，**每 10 块留 1 块做验证**。
-- 产出：`data/domain_papers.jsonl`（336 块，约 14.7 万 token）+ `data/domain_papers_eval.jsonl`（38 块，约 1.4 万 token），已注册到 `data/dataset_info.json`（`domain_papers` / `domain_papers_eval`，`columns.prompt = "text"`）。
-
-**训练**（`examples/train_lora/qwen3_4b_domain_pretrain.yaml`）：
-
-| 参数 | 值 | 说明 |
-|------|----|------|
-| 模型 | `model/Qwen3-4B` | 本地基座，LoRA rank 8 / target all |
-| 窗口 | `cutoff_len: 2048`，PT 自动 packing | 多块短文本拼满窗口，提吞吐 |
-| 有效 batch | 1 × 8 | 336 块 ≈ 72 个窗口 / 8 ≈ **9 步/epoch** |
-| 学习率 | 1e-4，cosine，warmup 0.1 | PT 比 SFT（5e-5）高一档 |
-| epochs | 5.0 | 语料小，多过几遍 |
-| 时长 | 45 步 ≈ **35 分钟** | ~47 秒/步，16GB 显存占 15.7GB（几乎顶满） |
-
-**结果**：
-
-| 指标 | 训练前（基座） | 训练后（基座+LoRA） | 变化 |
-|------|--------------|--------------------|------|
-| 验证集 PPL（LLaMA-Factory 内评） | — | 12.56 | — |
-| 验证集 PPL（早期 `eval_ppl.py` 测，脚本已删，改用 `stat_utils/cal_ppl.py`） | 18.80 | 12.82 | **↓ 32%** |
-| 续写对比（早期 `continue_text.py` 测，脚本已删，改用 `llamafactory-cli chat`） | 臆造模型名 / 质疑工具不存在 | 流畅接续领域文风、术语准确 | 明显变好 |
-
-**关键观察**：eval PPL 在 step 30 后进入平台期（约 2.53 不再降），说明 3~5 epochs 对小语料已足够，**用验证集 PPL 决定停训比拍脑袋设步数更科学**。
-
-**本机两个必踩的坑**：
-
-| 坑 | 现象 | 处理 |
-|----|------|------|
-| 默认 HF 缓存目录写不进 | `datasets` 卡死 15 分钟+（filelock 无限重试，因为 `C:\Users\skype\.cache\huggingface\datasets` 拒绝创建文件） | 命令前加 `$env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'`（仓库 `.gitignore` 已忽略 `hf_cache/`）。**所有**用 datasets 的 LF 命令都要带（完整训练命令见 `learning_train_list.md` 第 10 节（动手清单））。 |
-| Windows 多进程预处理 | `preprocessing_num_workers: 0` 报 `ValueError`；`>1` 时 spawn 卡死 | 统一设 **1**（语料小，无性能损失） |
+- 语料 18 份文档 → 336 训练块 / 38 验证块（`data/domain_papers.jsonl`，约 14.7 万 token，构建脚本 `scripts/data/build_domain_corpus.py`）；LoRA rank8 训练 45 步 / 35 分钟，训练内评 PPL 12.56，step30 后进平台。
+- 本文件独有的两组早期数据（脚本已删，口径与训练内评不同）：`eval_ppl.py` 测基座→adapter **PPL 18.80 → 12.82（↓32%）**；`continue_text.py` 续写对照——基座臆造模型名 / 质疑工具不存在 → adapter 流畅接续领域文风、术语准确。
+- 语料构建细节、训练参数表、PPL/续写完整评估与排坑实录（HF 缓存写不进、Windows 多进程预处理等 6 坑，及 8B/9B 扩展）均已详录于 [learning_train_list.md](./learning_train_list.md)（§3 / §5 / §6.1 / §7）。
 
 ---
 
@@ -421,7 +392,7 @@ llamafactory-cli chat examples/inference\qwen3_merged_chat.yaml
 
 ## 5. 蒸馏（R1 思维链 → 小模型）
 
-> ⚠️ 未实测。
+> ⚠️ 未实测（本节为 R1 思维链蒸馏的思路篇；领域 QA 蒸馏闭环已落地，见 5.3）。
 
 ### 5.1 关键认知：LLaMA-Factory 没有「蒸馏」阶段
 
@@ -446,6 +417,10 @@ LF 的 `stage` 只有 `pt / sft / rm / ppo / dpo / kto`，**没有 `distill`**�
 4. **student 训练**：用第 2 节 SFT 配置训 Qwen3-4B，**`enable_thinking: true`**（让 student 学会输出思维链格式）。DeepSeek-R1-Distill-Qwen 系列就是这么来的。
 
 > 💡 关键是**数据质量**：teacher 生成的思维链越准、越清晰，student 蒸出来的推理能力越强。这一步决定蒸馏效果，配置反而是次要的。
+
+### 5.3 已落地：蒸馏闭环（DeepSeek 出题 → Kimi 裁判 → PT→SFT）
+
+上述「数据蒸馏」思路的领域 QA 版已于 2026-08-19 全链路跑通（Qwen3.5-9B + 环保语料）：DeepSeek 从语料出题（quote 锚定原文、机械校验）→ Kimi 三维评分三档过筛 + 人工复核 → 在 PT adapter 上 SFT 续训（~18 步）→ 留出 10 题经 `llamafactory-cli api` + `scripts/data/ask_compare.py` 全自动对比评测。管线、命令、实测结果与 7 个新增坑详见 [learning_train_list.md](./learning_train_list.md) §12。
 
 ---
 

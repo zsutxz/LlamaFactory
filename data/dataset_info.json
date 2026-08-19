@@ -769,5 +769,14 @@
     "columns": {
       "prompt": "text"
     }
+  },
+  "domain_env_qa": {
+    "file_name": "domain_env_qa.jsonl"
+  },
+  "domain_env_qa_sft": {
+    "file_name": "domain_env_qa_sft.jsonl"
+  },
+  "domain_env_qa_eval": {
+    "file_name": "domain_env_qa_eval.jsonl"
   }
 }

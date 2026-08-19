@@ -8,11 +8,14 @@
 
 ## 脚本与工具约定
 
-> 原则：**只有「数据清洗」才自写脚本，统一放 `scripts/data/`；训练、评估、推理等其他流程一律用 LLaMA-Factory 原生能力。**
+> 原则：**只有「数据处理」（清洗 / 蒸馏造数）才自写脚本，统一放 `scripts/data/`；训练、评估、推理等其他流程一律用 LLaMA-Factory 原生能力。**
 
 | 流程 | 用什么 | 说明 |
 |------|--------|------|
-| 数据清洗 | `scripts/data/build_domain_corpus.py` | 本工作流唯一自写脚本（PDF/md/html → jsonl） |
+| 数据清洗 | `scripts/data/build_domain_corpus.py` | 语料构建（PDF/md/html → jsonl） |
+| 蒸馏造数 | `scripts/data/generate_domain_qa.py` | DeepSeek 从语料块生成锚定原文的 QA 对（§12） |
+| 裁判过筛 | `scripts/data/judge_domain_qa.py` | Kimi 三维评分三档分流 + PT/SFT 对比评分（§12） |
+| 留出题评测 | `llamafactory-cli api` + `scripts/data/ask_compare.py` | 本地服务自动问答回填，免人工粘贴（§12 坑 7） |
 | 训练（PT） | `llamafactory-cli train` | 4B bf16 LoRA / 8B 4-bit QLoRA |
 | PPL 评估 | 训练内 eval（`eval_steps`） | `cal_ppl.py` 不支持量化、大模型 OOM（§5 坑 6），统一用训练内评 |
 | 续写 / 推理 | `llamafactory-cli chat` + **独立 infer yaml** | chat 不收 train yaml（§5 坑 4） |
@@ -242,7 +245,17 @@ prefix: "Multimodal memory" is a crucial concept that describes how an agent han
 
 **2. 环境变量**（每个新会话都要，否则 datasets 卡死）
 - [ ] `cd E:\AI\LLaMA-Factory`
-- [ ] `$env:PYTHONUTF8='1'; $env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'; $env:HF_HUB_OFFLINE='1'`
+- [ ] 一次性永久（推荐，只执行一次）：把变量挂到 conda 环境，以后每次 `conda activate llama-factory` 自动带上，训练命令不再需要 `$env:` 前缀：
+
+  ```powershell
+  conda env config vars set LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 -n llama-factory
+  conda deactivate
+  conda activate llama-factory
+  conda env config vars list    # 确认列出这两个变量
+  ```
+
+  - `LF_ALLOW_TORCH29_CONV3D` 仅 Qwen3.5-9B 需要：torch 2.9.x + 视觉模块 Conv3D 触发 `src/llamafactory/model/loader.py` 的防护闸（已知性能回归；纯文本 PT 不执行 Conv3D，放行安全，启动日志出现 bypass WARNING 属预期）
+- [ ] 仍需每次手设（`HF_HUB_OFFLINE` 挂死会挡住联网下模型）：`$env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'; $env:HF_HUB_OFFLINE='1'`
 
 **3. 冒烟 3 步 ★检查点**（~5 分钟）
 - [ ] `llamafactory-cli train examples\train_lora\qwen3_8b_domain_pretrain.yaml max_samples=80 max_steps=3 output_dir=saves\Qwen3-8B-domain\lora\pt_smoke`
@@ -275,6 +288,116 @@ prefix: "Multimodal memory" is a crucial concept that describes how an agent han
 | `data/dataset_info.json`（新增条目） | 数据集注册（`domain_papers` / `domain_papers_eval`） |
 | `examples/train_lora/qwen3_4b_domain_pretrain.yaml` | 4B 训练配置（bf16 LoRA） |
 | `examples/train_lora/qwen3_8b_domain_pretrain.yaml` | 8B 训练配置（4-bit QLoRA） |
+| `examples/train_lora/qwen3_5_9b_domain_pretrain.yaml` | 9B 训练配置（4-bit QLoRA，Qwen3.5-9B-Base + 环保语料 domain_env） |
 | `examples/inference/qwen3_8b_domain_chat.yaml` | 续写/推理配置（仅模型键，§5 坑 4） |
 | `saves/Qwen3-4B-domain/lora/pt` | 4B 训练产物（adapter 66MB + checkpoint-30/40/45 + 曲线 + 指标） |
 | `saves/Qwen3-8B-domain/lora/pt` | 8B 训练产物（adapter 87MB + checkpoint-30/40/45 + 曲线 + 指标） |
+| `scripts/data/generate_domain_qa.py` | 蒸馏造数脚本（DeepSeek 出题 + quote 机械校验 + manifest 幂等，§12） |
+| `scripts/data/judge_domain_qa.py` | 裁判脚本（Kimi 三维评分三档分流 / PT vs SFT 对比，§12） |
+| `scripts/data/ask_compare.py` | 留出题自动问答回填（配合本地 api 服务，§12 坑 7） |
+| `data/domain_env_qa{,_eval,_sft,_manifest,_judged,_compare}.jsonl` | 蒸馏数据全家桶（生成 → 过筛 → 对比；均不入库） |
+| `data/domain_env_qa_review.md` / `_compare_report.md` | 裁判报告（兼人工抽检文档）/ PT vs SFT 对比报告 |
+| `examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml` | 9B PT→SFT 续训配置（蒸馏 QA，§12） |
+| `examples/inference/qwen3_5_9b_domain_chat.yaml` | 9B 推理配置（仅模型键；key=value 切 pt / pt_then_sft adapter） |
+| `saves/Qwen3.5-9B-domain-env/lora/pt_then_sft` | 9B PT→SFT 训练产物（§12） |
+
+---
+
+## 12. 蒸馏闭环（模式 D）：DeepSeek 出题 → Kimi 裁判 → PT→SFT 续训
+
+> 背景：§1 已证 PT 只灌知识与文风、不会答领域问题，链路是 PT → SFT。本节用「通用大模型造数据 + 裁判过筛」
+> 补上 SFT 这一环：DeepSeek 从环保语料出题（答案锚定原文），Kimi（kimi-k3）三维评分过筛，人工抽检后在 9B 的
+> PT adapter 上续训。两家分工同时避开「自评偏差」（出题的不当裁判）。
+
+### 12.1 管线
+
+```
+domain_env.jsonl 等距抽 60 块（固定梯子，冒烟=正式前缀）
+  → DeepSeek 逐块生成 QA（question/answer/quote 三字段 JSON）
+  → 机械校验：quote 去空白后必须存在于原文（失败带提示重试一次，仍败记 grounding_fail）
+  → manifest 落盘（唯一事实源，sha1 幂等，中断重跑不重复扣费）
+  → Kimi 三维评分（grounding/terminology/value 各 1~5）
+  → 三档分流：pass（≥4.0 且三维各 ≥3）/ review（人工复核）/ drop（均分 <3 或 grounding ≤2）
+  → 人工抽检报告，review 条目合格用 --promote 改判
+  → domain_env_qa_sft.jsonl 注册为 alpaca 数据集
+  → qwen3_5_9b_domain_pt_then_sft.yaml 在 PT adapter 上 SFT（~18 步）
+  → 留出 10 题（训练从未见过）：pt / pt_then_sft 两 adapter 各答一遍 → Kimi 对比评分出报告
+```
+
+### 12.2 命令（conda env llama-factory；脚本另需 PYTHONUTF8=1）
+
+```bash
+# ① 蒸馏造数（先冒烟 3 块人工看质量、调 prompt，再正式全量；60 次调用约 0.5 元 / 10~20 分钟）
+python scripts/data/generate_domain_qa.py --num 3 --eval-num 0   # 冒烟（是正式集的严格前缀）
+python scripts/data/generate_domain_qa.py                          # 正式 50 训练 + 10 留出
+
+# ② 裁判过筛（先 --limit 3 看分数是否非全同，再全量）
+python scripts/data/judge_domain_qa.py --limit 3
+python scripts/data/judge_domain_qa.py
+python scripts/data/judge_domain_qa.py --promote "12,27"          # 人工复核改判（sft 集自动重写）
+
+# ③ SFT（训练/推理命令都带四项环境变量，9B 必须 LF_ALLOW_TORCH29_CONV3D=1）
+LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1 \
+  llamafactory-cli train examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml max_steps=3   # 冒烟
+# 正式：去掉 max_steps=3（约 18 步，几分钟）
+
+# ④ 留出 10 题对比（全自动：本地 api 服务自动问答，免人工 chat 粘贴）
+python scripts/data/judge_domain_qa.py --mode init-compare        # 生成对比骨架
+# 起 PT 服务 → ask_compare 回填 answer_pt → 停服务；换 pt_then_sft adapter 重启 → 回填 answer_sft
+LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=... HF_HUB_OFFLINE=1 API_HOST=127.0.0.1 API_PORT=8000 \
+  llamafactory-cli api examples/inference/qwen3_5_9b_domain_chat.yaml \
+  adapter_name_or_path=saves/Qwen3.5-9B-domain-env/lora/pt
+PYTHONUTF8=1 python scripts/data/ask_compare.py --field answer_pt
+PYTHONUTF8=1 python scripts/data/ask_compare.py --field answer_sft   # 换 pt_then_sft adapter 重启服务后
+python scripts/data/judge_domain_qa.py --mode compare             # Kimi 对比评分 → _compare_report.md
+```
+
+API 钥匙放项目根 `.env`（已被 gitignore）：`DEEPSEEK_API_KEY`（出题）/ `MOONSHOT_API_KEY`（裁判）。
+
+### 12.3 机制要点
+
+- **采样梯子**：语料构建时已 seed(42) 洗牌，文件序即随机序；等距取 60 级 = 随机 + 全库均匀覆盖 + 确定，
+  冒烟 3 块必然 ⊂ 正式 60 块，manifest 按 block_sha1 幂等跳过，冒烟产物不作废、不重复扣费。
+- **manifest 即事实源**：每行内嵌原文全文与 QA 三字段，输出 jsonl 每次由 manifest 全量重写——
+  避免「写一半崩溃导致 jsonl 与 manifest 失步」的去重难题。
+- **三档而非一刀切**：边缘条目（review）不静默丢弃，进报告人工复核，`--promote` 改判重跑即入 sft 集。
+- **对比评分防位置偏差**：compare 模式奇偶行交换 A/B 呈现顺序，评分后映射回 pt/sft。
+- **SFT 机制**：同 8B 版（`adapter_name_or_path` resume 同一 adapter；量化基座单 adapter；
+  rank/alpha/target 必须与 PT 一致；lr 5e-5 比 PT 降一档）。qwen3_5 是 ReasoningTemplate，
+  SFT 空 think 块计入 loss，推理用 `enable_thinking: false` 对齐。
+
+### 12.4 诚实定位与预期
+
+- 50 条蒸馏 QA 是**管线验证批**而非效果批：~18 步 SFT 改变的是**回答格式、直接作答+引原文的习惯、术语使用**，
+  知识增量主要来自 PT——评测预期设为「SFT 在格式/术语/忠实度上占优」，别设「正确率大涨」（会翻车误判）。
+- 裁判同源局限：参考答案出自 DeepSeek、裁判是 Kimi 已避开自评，但裁判可能偏好某种行文（`--model` 可换）。
+
+### 12.4b 实测结果（2026-08-19，管线验证批）
+
+| 环节 | 结果 |
+|------|------|
+| 蒸馏生成 | 60 块 → 55 ok（92%，重试一轮补 4 块；5 块引用顽固失败）|
+| Kimi 裁判 | pass 52 / review 3 / drop 0；g 4.98 / t 5.00 / value 3.36（value 是真区分维度）|
+| 人工复核 | promote idx=202（框架题），431（页脚备案号）剔除；重跑后 sft 集 42 条 |
+| SFT | 18 步 / 283s，loss 1.91 → 0.84；显存同 PT（~14.3GB 量级）|
+| 留出 10 题对比 | **PT 6 胜 / SFT 3 胜 / 平 1，双方绝对分均低（多数均分 1~3）** |
+
+诚实结论：**闭环管线全部跑通，但 42 条验证批没有提升留出题的答题质量**——两个 adapter 都在
+硬事实（日期/数值）上大量臆测，PT 靠"更长更啰嗦"偶然更接近原文；SFT 学到的是回答**格式**
+（直答、简短，字数 14~390 vs PT 103~1077），但 42 条教不会知识。这与"管线验证批 vs 效果批"
+的预判一致：下一步是放量蒸馏（300~500 条、答案加长到 150~300 字）再训，而不是回头怀疑管线。
+
+### 12.5 新增坑
+
+1. **DeepSeek JSON mode** 要求 prompt 里出现 "json" 字样，否则 400——出题模板已内置。
+2. **第三方端点 response_format 兼容性不一**：裁判侧不用 JSON mode，统一宽松解析（剥围栏+截首{尾}）。
+3. **quote 比对必须空白归一化**：语料 clean() 规整过空白，模型复述时常有微差，裸 substring 大量误杀。
+4. **`.env.local` 被 git 追踪**，写密钥必泄漏；钥匙只进 `.env`（gitignore:123 已覆盖）。
+5. **裁判模型踩坑实录**：智谱 glm-4.7/5.2 需账户余额(429 错误码 1113)、glm-4.5-flash 免费但是推理模型
+   （max_tokens 会被 reasoning_content 烧光导致 content 为空，须 thinking disabled）；后裁判改 Kimi
+   （`kimi-k3` + `https://api.moonshot.cn/v1`）。模型名/base-url 都留了 CLI 参数（`--model`/`--base-url`）。
+6. **kimi-k3 只允许 temperature=1**：传 temperature=0 直接 400；且同为推理模型（思考会吃 tokens）。
+   裁判脚本已改为"参数组合逐级降级"（temperature=0+thinking关 → 省略temperature → 裸调），max_tokens 提到 2048。
+   temperature=1 意味着**裁判打分有随机性**：--promote 重跑全量时边缘条目（value 3↔4）会抖动，属预期。
+7. **留出题自动评测可免人工**：`llamafactory-cli api <infer yaml> adapter_name_or_path=...` 起本地
+   OpenAI 兼容服务（默认模型名 gpt-3.5-turbo），`scripts/data/ask_compare.py` 逐题问答回填，免 20 次手动粘贴。

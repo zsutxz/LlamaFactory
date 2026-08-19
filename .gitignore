@@ -206,5 +206,16 @@ progress_report/
 data/domain_env_eval.jsonl
 data/domain_env_stats.txt
 data/domain_env.jsonl
-model/
+
+# 蒸馏闭环生成的 QA 数据与裁判报告(不入库)；API 钥匙在 .env(已覆盖)
+data/domain_env_qa.jsonl
+data/domain_env_qa_eval.jsonl
+data/domain_env_qa_sft.jsonl
+data/domain_env_qa_manifest.jsonl
+data/domain_env_qa_judged.jsonl
+data/domain_env_qa_compare.jsonl
+data/domain_env_qa_compare_report.md
+data/domain_env_qa_review.md
+data/domain_env_qa_stats.txt
+/model/          # 仅根目录的模型权重目录(锚定,避免误伤 src/llamafactory/model 包)
 .agents/skills/progress-report/config/sources.example.json

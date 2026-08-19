@@ -1,7 +1,7 @@
 # LLaMA-Factory 框架原理
 
 > 本文档介绍 LLaMA-Factory 框架本身的结构、模块、配置与核心概念。
-> 本机实操：全流程上手见 [learning.md](./learning.md)；领域 PT（4B/8B/9B）与蒸馏闭环的完整实测见 [learning_train_list.md](./learning_train_list.md)。
+> 本机实操：全流程上手见 [learning.md](./learning.md)；领域 PT（4B/8B/9B）与蒸馏闭环的完整实测见 [train_list.md](./train_list.md)。
 
 ---
 
@@ -231,7 +231,7 @@ stage 的完整定义在 `src/llamafactory/hparams/finetuning_args.py:460`（`Li
 4. **减小cutoff_len**
 5. **启用DeepSpeed**
 
-**QLoRA 实测锚点**（16GB RTX 5060 Ti，详见 [learning_train_list.md](./learning_train_list.md)）：8B/9B bf16 基座放不进 16GB，必须 4-bit（`quantization_bit: 4` + `method: bnb`，nf4）——量化后基座仅 ~5GB，训练总占用 ~14.3GB，反而比 4B bf16（15.7GB 近顶满）更省；Blackwell 架构（sm_120）需 bitsandbytes ≥0.43。
+**QLoRA 实测锚点**（16GB RTX 5060 Ti，详见 [train_list.md](./train_list.md)）：8B/9B bf16 基座放不进 16GB，必须 4-bit（`quantization_bit: 4` + `method: bnb`，nf4）——量化后基座仅 ~5GB，训练总占用 ~14.3GB，反而比 4B bf16（15.7GB 近顶满）更省；Blackwell 架构（sm_120）需 bitsandbytes ≥0.43。
 
 ---
 
@@ -265,7 +265,7 @@ teacher（外部 API，如 DeepSeek）从语料生成 QA
   → 注册为 alpaca 数据集，走 LF 原生 stage: sft   ← LF 只负责这一步
 ```
 
-本项目落地：`scripts/data/generate_domain_qa.py`（出题）→ `judge_domain_qa.py`（裁判/对比评分）→ `ask_compare.py`（留出题自动评测，配合 `llamafactory-cli api`），完整管线与实测见 [learning_train_list.md](./learning_train_list.md) §12。
+本项目落地：`scripts/data/generate_domain_qa.py`（出题）→ `judge_domain_qa.py`（裁判/对比评分）→ `ask_compare.py`（留出题自动评测，配合 `llamafactory-cli api`），完整管线与实测见 [train_list.md](./train_list.md) §12。
 
 **量化基座只允许挂 1 个 adapter**（QLoRA 续训的关键约束）：
 

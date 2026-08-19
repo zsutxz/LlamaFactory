@@ -2,7 +2,7 @@
 
 > 本文档记录在本机（Windows + conda）上手使用 LLaMA-Factory 的**完整实操流程**。
 > 框架原理（目录结构 / 核心模块 / 配置 / 概念 / 代码位置）见 [frame.md](./frame.md)。
-> 领域 PT（4B/8B/9B）与蒸馏闭环的完整实测记录见 [learning_train_list.md](./learning_train_list.md)。
+> 领域 PT（4B/8B/9B）与蒸馏闭环的完整实测记录见 [train_list.md](./train_list.md)。
 
 ---
 
@@ -210,7 +210,7 @@ llamafactory-cli train examples/train_lora/qwen3_pt.yaml   # 你的配置路径
 
 - 语料 18 份文档 → 336 训练块 / 38 验证块（`data/domain_papers.jsonl`，约 14.7 万 token，构建脚本 `scripts/data/build_domain_corpus.py`）；LoRA rank8 训练 45 步 / 35 分钟，训练内评 PPL 12.56，step30 后进平台。
 - 本文件独有的两组早期数据（脚本已删，口径与训练内评不同）：`eval_ppl.py` 测基座→adapter **PPL 18.80 → 12.82（↓32%）**；`continue_text.py` 续写对照——基座臆造模型名 / 质疑工具不存在 → adapter 流畅接续领域文风、术语准确。
-- 语料构建细节、训练参数表、PPL/续写完整评估与排坑实录（HF 缓存写不进、Windows 多进程预处理等 6 坑，及 8B/9B 扩展）均已详录于 [learning_train_list.md](./learning_train_list.md)（§3 / §5 / §6.1 / §7）。
+- 语料构建细节、训练参数表、PPL/续写完整评估与排坑实录（HF 缓存写不进、Windows 多进程预处理等 6 坑，及 8B/9B 扩展）均已详录于 [train_list.md](./train_list.md)（§3 / §5 / §6.1 / §7）。
 
 ---
 
@@ -420,7 +420,7 @@ LF 的 `stage` 只有 `pt / sft / rm / ppo / dpo / kto`，**没有 `distill`**�
 
 ### 5.3 已落地：蒸馏闭环（DeepSeek 出题 → Kimi 裁判 → PT→SFT）
 
-上述「数据蒸馏」思路的领域 QA 版已于 2026-08-19 全链路跑通（Qwen3.5-9B + 环保语料）：DeepSeek 从语料出题（quote 锚定原文、机械校验）→ Kimi 三维评分三档过筛 + 人工复核 → 在 PT adapter 上 SFT 续训（~18 步）→ 留出 10 题经 `llamafactory-cli api` + `scripts/data/ask_compare.py` 全自动对比评测。管线、命令、实测结果与 7 个新增坑详见 [learning_train_list.md](./learning_train_list.md) §12。
+上述「数据蒸馏」思路的领域 QA 版已于 2026-08-19 全链路跑通（Qwen3.5-9B + 环保语料）：DeepSeek 从语料出题（quote 锚定原文、机械校验）→ Kimi 三维评分三档过筛 + 人工复核 → 在 PT adapter 上 SFT 续训（~18 步）→ 留出 10 题经 `llamafactory-cli api` + `scripts/data/ask_compare.py` 全自动对比评测。管线、命令、实测结果与 7 个新增坑详见 [train_list.md](./train_list.md) §12。
 
 ---
 

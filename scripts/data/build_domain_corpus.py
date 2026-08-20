@@ -9,7 +9,7 @@
        E:\\AI\\teach-fish-to-swim\\** 的 raw-content.md / index.html
    出: data/domain_papers.jsonl / _eval.jsonl / _stats.txt
 
-2) 目录扫描模式(供 env-docs-collector 采集的 data_raw 用)：
+2) 目录扫描模式(供 public-data-pipeline skill 采集的 data_raw 用)：
    python scripts/data/build_domain_corpus.py --src data_raw --out-prefix domain_env
    源: 递归扫描 --src 下的 *.md / *.html / *.pdf (跳过 _ 前缀元数据文件)
    出: data/<prefix>.jsonl / _eval.jsonl / _stats.txt

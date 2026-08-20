@@ -22,7 +22,7 @@ examples:
 从**多个需要账号密码登录的 Web 系统**（如 禅道 / Redmine / Jira Server / 自研 OA）
 抓取「项目/任务进度」，归一化为统一任务结构，渲染成一份汇总报表。
 
-> 与 [[env-docs-collector]] 的分工：那个采集**公开语料**进 `data_raw/`；
+> 与 [[public-data-pipeline]] 的分工：那个采集**公开语料**进 `data_raw/` 并清洗入库；
 > 这个登录**内部/受保护系统**拉**任务进度**进 `progress_report/`。互不复用。
 
 ## 能力边界（先看清，避免抓不动）

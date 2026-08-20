@@ -1,6 +1,6 @@
 ---
 name: public-data-pipeline
-description: 从互联网公开来源采集任意领域资料(法规/标准/论文/公开文档)，下载到 data_raw，再清洗切块为 LLaMA-Factory 预训练(PT)语料并注册到 dataset_info.json 的端到端流水线。当用户要求"采集公开数据/清洗数据/构建某领域训练语料/下载资料并入库"，或只做其中一段(只采集、或只清洗已有 data_raw)时使用。
+description: 从互联网公开来源采集任意领域资料(法规/标准/论文/公开文档)，下载到 data_raw，再清洗切块为 LLaMA-Factory 预训练(PT)语料并注册到 dataset_info.json 的端到端流水线；含蒸馏 QA 生成与定向劣化偏好对(DPO/RM 数据)支线。当用户要求"采集公开数据/清洗数据/构建某领域训练语料/生成偏好对/DPO或RM数据/下载资料并入库"，或只做其中一段(只采集、只清洗、只出题、只造偏好对)时使用。
 allowed-tools:
   - WebSearch
   - WebFetch
@@ -22,18 +22,26 @@ examples:
 # 公开数据采集清洗流水线 (public-data-pipeline)
 
 ## 用途
-端到端编排三段现成机制，产出可直接用于 LLaMA-Factory PT 的数据集：
+端到端编排两条数据线，产出可直接用于 LLaMA-Factory 训练的数据集：
 
 ```
+A线·PT 语料（采集→清洗→注册）
 ① 采集   WebSearch/webReader 找直链 → data_raw/_fetch_list.json
          → python .agents/skills/public-data-pipeline/scripts/fetch_docs.py
          → data_raw/<category>/  (+ _manifest.jsonl 幂等记录)
-② 清洗   python scripts/data/build_domain_corpus.py --src data_raw --out-prefix domain_<slug>
+② 清洗   python .agents/skills/public-data-pipeline/scripts/build_domain_corpus.py \
+             --src data_raw --out-prefix domain_<slug>
          → data/domain_<slug>.jsonl / _eval.jsonl / _stats.txt
-③ 注册   data/dataset_info.json 追加两条数据集项
+③ 注册   data/dataset_info.json 追加两条数据集项(prompt=text)
+
+B线·偏好对（出题→裁判→劣化→注册，供 DPO/RM）
+⑤ 出题   generate_domain_qa.py 用 DeepSeek 从 A 线语料块生成锚定原文的 QA 对
+⑥ 裁判   judge_domain_qa.py 用 Kimi 三维评分过筛，pass 项成 <prefix>_qa_sft.jsonl
+⑦ 劣化   generate_domain_pref.py 对过筛答案定向造 rejected → <prefix>_pref.jsonl
+   注册   dataset_info.json 加 ranking:true 一项(chosen/rejected 列)
 ```
 
-> 三段可独立执行：用户只要"清洗"就从②开始（data_raw 已有内容）；只要"采集"就止于①。
+> 各阶段可独立执行：只要"清洗"就从②开始；只要"偏好对"且 QA 已有就从⑥开始。
 
 ## 工作流（Claude 按序执行，每阶段结束向用户汇报一次）
 
@@ -81,7 +89,7 @@ examples:
 
 ### 阶段 3 · 清洗入库
 ```bash
-python scripts/data/build_domain_corpus.py --src data_raw --out-prefix domain_<slug>
+python .agents/skills/public-data-pipeline/scripts/build_domain_corpus.py --src data_raw --out-prefix domain_<slug>
 ```
 递归扫描 data_raw 下的 md/html/pdf/txt/xml（`_` 前缀元数据文件自动跳过），完成：去噪规整 → 按段落切块(约1800字符) → 块级哈希去重 → 固定种子划分训练/验证。
 产出 `data/domain_<slug>.jsonl`、`data/domain_<slug>_eval.jsonl`、`data/domain_<slug>_stats.txt`。
@@ -101,13 +109,55 @@ python scripts/data/build_domain_corpus.py --src data_raw --out-prefix domain_<s
 ```
 之后即可在训练 yaml 的 `dataset:` 里引用 `domain_<slug>`。
 
-## 后续（不在本 skill 范围，仅提示）
-PT 语料若要生成 SFT 问答对：`scripts/data/generate_domain_qa.py` + `judge_domain_qa.py`（见蒸馏闭环流程）。
+## B 线 · 蒸馏 QA 与偏好对（DPO/RM 数据）
 
-## 脚本
-- 采集：`scripts/fetch_docs.py`（本 skill 自带；curl 优先/urllib 兜底、PDF 头校验、限速 1s/请求）
-  ```bash
-  python .agents/skills/public-data-pipeline/scripts/fetch_docs.py \
-    [--data-raw ./data_raw] [--list ./data_raw/_fetch_list.json]
-  ```
-- 清洗：复用 `scripts/data/build_domain_corpus.py`（需 PyMuPDF 解析 PDF，缺库时自动跳过 PDF）
+DPO/RM 的核心都是**偏好对** (prompt + chosen + rejected)；PPO 额外只要一池 prompt（eval QA 即可）。
+chosen 来自过筛蒸馏 QA，rejected 由 DeepSeek 定向劣化（数值篡改/主体张冠李戴/关键截断/模糊化，行序轮转）。
+
+### 阶段 5 · 出题（DeepSeek）
+```bash
+python .agents/skills/public-data-pipeline/scripts/generate_domain_qa.py --num 3 --eval-num 0   # 冒烟
+python .agents/skills/public-data-pipeline/scripts/generate_domain_qa.py                        # 正式
+```
+从 `data/domain_<slug>.jsonl` 语料块生成锚定原文的 QA（quote 机械校验），manifest 幂等。
+需 `.env` 配 `DEEPSEEK_API_KEY`。**注意：该脚本的出题 system prompt 目前写死环保领域，换领域需先改 SYSTEM_PROMPT。**
+
+### 阶段 6 · 裁判过筛（Kimi）
+```bash
+python .agents/skills/public-data-pipeline/scripts/judge_domain_qa.py --limit 3   # 冒烟
+python .agents/skills/public-data-pipeline/scripts/judge_domain_qa.py             # 全量
+```
+三维评分(grounding/terminology/value)三档分流，pass 项写入 `data/<prefix>_qa_sft.jsonl`（SFT 集兼 chosen 池）。
+需 `.env` 配 `MOONSHOT_API_KEY`；kimi-k3 只认 temperature=1。
+
+### 阶段 7 · 偏好对生成（DeepSeek 定向劣化）
+```bash
+python .agents/skills/public-data-pipeline/scripts/generate_domain_pref.py --limit 2   # 冒烟
+python .agents/skills/public-data-pipeline/scripts/generate_domain_pref.py             # 正式
+```
+读 `<prefix>_qa_sft.jsonl`，对每条答案按轮转缺陷劣化成 rejected，机械校验与 chosen 有实质差异，
+产出 `data/<prefix>_pref.jsonl`（alpaca ranking 格式）。manifest 幂等、中断重跑不重复扣费。
+
+**注册（与 A 线不同，须显式指定 chosen/rejected 列）：**
+```json
+"domain_<slug>_pref": {
+  "file_name": "domain_<slug>_pref.jsonl",
+  "ranking": true,
+  "columns": {"prompt": "instruction", "query": "input", "chosen": "chosen", "rejected": "rejected"}
+}
+```
+
+**训练侧用法**：`stage: dpo` 直接吃该数据集；PPO 则先用同一份 `stage: rm` 训 RM，再用 prompt 池跑 `stage: ppo`。
+PPO 训练中 policy 实时生成、RM 实时打分（9B QLoRA 单卡挂不动，先 DPO/KTO）。
+
+## 脚本（全部自带于本 skill 的 scripts/）
+| 脚本 | 用途 | 依赖 |
+|---|---|---|
+| `fetch_docs.py` | 清单批量下载，curl 优先/urllib 兜底、PDF 头校验、限速 1s/请求 | 无 |
+| `build_domain_corpus.py` | 清洗/切块/去重/划分，目录扫描模式 | PyMuPDF(可选) |
+| `generate_domain_qa.py` | DeepSeek 出题（锚定原文+quote 校验） | openai, .env:DEEPSEEK_API_KEY |
+| `judge_domain_qa.py` | Kimi 裁判过筛 + PT/SFT 对比评测 | openai, .env:MOONSHOT_API_KEY |
+| `ask_compare.py` | 本地 api 服务自动作答回填对比骨架 | 本地 LLaMA-Factory api |
+| `generate_domain_pref.py` | 定向劣化生成偏好对(DPO/RM) | openai, .env:DEEPSEEK_API_KEY |
+
+API 密钥一律读项目根 `.env`（已 gitignore；勿写 .env.local——它被 git 追踪）。跑脚本需 `PYTHONUTF8=1`（conda env llama-factory）。

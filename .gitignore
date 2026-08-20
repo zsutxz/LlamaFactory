@@ -195,28 +195,15 @@ model/qwen3-1.7B/
 *.pt
 .heagent/
 .session-resume/
-data/domain_papers_eval.jsonl
-data/domain_papers_stats.txt
-data/domain_papers.jsonl
+data/
 data_raw/
+
+# 仅根目录的模型权重目录(锚定,避免误伤 src/llamafactory/model 包；gitignore 不支持行内注释)
+/model/
 
 # progress-report skill：真实配置(可能含内网URL)与输出报表不入库；凭据在 .env(已覆盖)
 config/sources.json
 progress_report/
-data/domain_env_eval.jsonl
-data/domain_env_stats.txt
-data/domain_env.jsonl
 
-# 蒸馏闭环生成的 QA 数据与裁判报告(不入库)；API 钥匙在 .env(已覆盖)
-data/domain_env_qa.jsonl
-data/domain_env_qa_eval.jsonl
-data/domain_env_qa_sft.jsonl
-data/domain_env_qa_manifest.jsonl
-data/domain_env_qa_judged.jsonl
-data/domain_env_qa_compare.jsonl
-data/domain_env_qa_compare_report.md
-data/domain_env_qa_review.md
-data/domain_env_qa_stats.txt
-# 仅根目录的模型权重目录(锚定,避免误伤 src/llamafactory/model 包；gitignore 不支持行内注释)
-/model/
-.agents/skills/progress-report/config/sources.example.json
+
+

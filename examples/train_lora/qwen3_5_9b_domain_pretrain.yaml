@@ -1,5 +1,5 @@
 ### 领域继续预训练（PT）：把「环境保护」语料灌进 Qwen3.5-9B-Base（4-bit QLoRA）
-### 生成：scripts/data/build_domain_corpus.py --src data_raw --out-prefix domain_env
+### 生成：.claude/skills/public-data-pipeline/scripts/build_domain_corpus.py --src data_raw --out-prefix domain_env
 ###       原始语料由 public-data-pipeline skill 采集（法律法规/行业标准/论文，见 data_raw/）
 ### 训练集：data/domain_env.jsonl（566 块，中文为主，约 55 万 token）
 ### 验证集：data/domain_env_eval.jsonl（63 块，约 6 万 token）

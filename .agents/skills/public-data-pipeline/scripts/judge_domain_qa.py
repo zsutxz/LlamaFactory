@@ -8,16 +8,16 @@
    - domain_env_qa_judged.jsonl  逐条评分明细
    - domain_env_qa_sft.jsonl     过筛后的 SFT 训练集（pass + --promote 改判）
    - domain_env_qa_review.md     裁判报告（兼人工抽检文档）
-   冒烟: python scripts/data/judge_domain_qa.py --limit 3
-   全量: python scripts/data/judge_domain_qa.py
-   改判: python scripts/data/judge_domain_qa.py --promote "12,27"（复核合格条目强制入 sft 集）
+   冒烟: python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --limit 3
+   全量: python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py
+   改判: python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --promote "12,27"（复核合格条目强制入 sft 集）
 
 2) init-compare：从 manifest 的 eval 条目生成对比骨架（question/reference 已填，
    answer_pt/answer_sft 留空，人工用 llamafactory-cli chat 各答 10 题后粘入）：
-   python scripts/data/judge_domain_qa.py --mode init-compare
+   python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --mode init-compare
 
 3) compare：对填好的骨架逐题评分（两答案各三维分 + prefer），出对比报告：
-   python scripts/data/judge_domain_qa.py --mode compare
+   python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --mode compare
 
 需项目根 .env 配置 MOONSHOT_API_KEY（.env 已被 gitignore；勿写 .env.local——它被 git 追踪）。
 裁判默认 kimi-k3（钥匙来自 platform.moonshot.cn；模型名以 Moonshot 文档为准）。
@@ -30,7 +30,7 @@ import os
 import re
 import time
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 DATA_DIR = os.path.join(REPO, "data")
 ENV_FILE = os.path.join(REPO, ".env")
 

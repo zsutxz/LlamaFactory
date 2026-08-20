@@ -29,7 +29,7 @@ LLaMA-Factory/
 │   ├── train_lora/        # LoRA训练配置
 │   ├── train_qlora/       # QLoRA训练配置
 │   └── inference/         # 推理配置
-├── scripts/               # 数据处理等自写脚本（本项目：scripts/data/ 语料构建与蒸馏造数）
+├── scripts/               # 数据处理等自写脚本（本项目：.claude/skills/public-data-pipeline/scripts/ 语料构建与蒸馏造数）
 ├── src/
 │   └── llamafactory/
 │       ├── cli.py         # CLI入口
@@ -265,7 +265,7 @@ teacher（外部 API，如 DeepSeek）从语料生成 QA
   → 注册为 alpaca 数据集，走 LF 原生 stage: sft   ← LF 只负责这一步
 ```
 
-本项目落地：`scripts/data/generate_domain_qa.py`（出题）→ `judge_domain_qa.py`（裁判/对比评分）→ `ask_compare.py`（留出题自动评测，配合 `llamafactory-cli api`），完整管线与实测见 [train_list.md](./train_list.md) §12。
+本项目落地：`.claude/skills/public-data-pipeline/scripts/generate_domain_qa.py`（出题）→ `judge_domain_qa.py`（裁判/对比评分）→ `ask_compare.py`（留出题自动评测，配合 `llamafactory-cli api`），完整管线与实测见 [train_list.md](./train_list.md) §12。
 
 **量化基座只允许挂 1 个 adapter**（QLoRA 续训的关键约束）：
 

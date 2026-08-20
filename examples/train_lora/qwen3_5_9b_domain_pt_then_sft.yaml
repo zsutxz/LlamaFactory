@@ -1,5 +1,5 @@
 ### Qwen3.5-9B 领域 SFT：在 PT adapter 上 resume（方案 B：量化基座单 adapter 续训）
-### 数据：DeepSeek 蒸馏 QA（scripts/data/generate_domain_qa.py 生成 → GLM 裁判过筛 → domain_env_qa_sft）
+### 数据：DeepSeek 蒸馏 QA（.claude/skills/public-data-pipeline/scripts/generate_domain_qa.py 生成 → GLM 裁判过筛 → domain_env_qa_sft）
 ### 环境变量(必需)：LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1
 ###   （LF_ALLOW_TORCH29_CONV3D 仅 9B 需要：torch 2.9.x + 视觉模块 Conv3D 触发 loader 防护闸，
 ###     纯文本训练放行安全，启动日志出现 bypass WARNING 属预期，见 docs/train_list.md §5）

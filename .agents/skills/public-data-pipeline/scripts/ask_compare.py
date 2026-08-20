@@ -3,7 +3,7 @@
 
 配合留出题对比评测（judge_domain_qa.py --mode compare）使用：
 1) 先起 api 服务（例：llamafactory-cli api <infer yaml> adapter_name_or_path=saves/.../pt）
-2) python scripts/data/ask_compare.py --field answer_pt            # 回填 PT 答案
+2) python .claude/skills/public-data-pipeline/scripts/ask_compare.py --field answer_pt            # 回填 PT 答案
 3) 换 pt_then_sft adapter 重启服务，再 --field answer_sft           # 回填 SFT 答案
 只回填目标字段为空的行，已填的跳过（幂等，中断重跑不重复问）。
 """
@@ -13,7 +13,7 @@ import json
 import os
 import time
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 DATA_DIR = os.path.join(REPO, "data")
 
 

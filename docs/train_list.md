@@ -8,14 +8,14 @@
 
 ## 脚本与工具约定
 
-> 原则：**只有「数据处理」（清洗 / 蒸馏造数）才自写脚本，统一放 `scripts/data/`；训练、评估、推理等其他流程一律用 LLaMA-Factory 原生能力。**
+> 原则：**只有「数据处理」（清洗 / 蒸馏造数）才自写脚本，统一放 `.claude/skills/public-data-pipeline/scripts/`；训练、评估、推理等其他流程一律用 LLaMA-Factory 原生能力。**
 
 | 流程 | 用什么 | 说明 |
 |------|--------|------|
-| 数据清洗 | `scripts/data/build_domain_corpus.py` | 语料构建（PDF/md/html → jsonl） |
-| 蒸馏造数 | `scripts/data/generate_domain_qa.py` | DeepSeek 从语料块生成锚定原文的 QA 对（§12） |
-| 裁判过筛 | `scripts/data/judge_domain_qa.py` | Kimi 三维评分三档分流 + PT/SFT 对比评分（§12） |
-| 留出题评测 | `llamafactory-cli api` + `scripts/data/ask_compare.py` | 本地服务自动问答回填，免人工粘贴（§12 坑 7） |
+| 数据清洗 | `.claude/skills/public-data-pipeline/scripts/build_domain_corpus.py` | 语料构建（PDF/md/html → jsonl） |
+| 蒸馏造数 | `.claude/skills/public-data-pipeline/scripts/generate_domain_qa.py` | DeepSeek 从语料块生成锚定原文的 QA 对（§12） |
+| 裁判过筛 | `.claude/skills/public-data-pipeline/scripts/judge_domain_qa.py` | Kimi 三维评分三档分流 + PT/SFT 对比评分（§12） |
+| 留出题评测 | `llamafactory-cli api` + `.claude/skills/public-data-pipeline/scripts/ask_compare.py` | 本地服务自动问答回填，免人工粘贴（§12 坑 7） |
 | 训练（PT） | `llamafactory-cli train` | 4B bf16 LoRA / 8B 4-bit QLoRA |
 | PPL 评估 | 训练内 eval（`eval_steps`） | `cal_ppl.py` 不支持量化、大模型 OOM（§5 坑 6），统一用训练内评 |
 | 续写 / 推理 | `llamafactory-cli chat` + **独立 infer yaml** | chat 不收 train yaml（§5 坑 4） |
@@ -59,7 +59,7 @@
 | 5-Day-AI-Agents | Google AI Agent 课程 6 份讲义 | 6 PDF（文本密集） |
 | teach-fish-to-swim | 多篇论文全文/精读（NVFP4 预训练、递归语言模型等） | md / html |
 
-### 3.2 构建脚本 `scripts/data/build_domain_corpus.py`
+### 3.2 构建脚本 `.claude/skills/public-data-pipeline/scripts/build_domain_corpus.py`
 
 处理流水线：
 
@@ -282,7 +282,7 @@ prefix: "Multimodal memory" is a crucial concept that describes how an agent han
 
 | 文件 | 作用 |
 |------|------|
-| `scripts/data/build_domain_corpus.py` | 语料构建脚本（PDF/md/html → jsonl 训练/验证集 + 统计） |
+| `.claude/skills/public-data-pipeline/scripts/build_domain_corpus.py` | 语料构建脚本（PDF/md/html → jsonl 训练/验证集 + 统计） |
 | `data/domain_papers.jsonl` / `domain_papers_eval.jsonl` | 训练 / 验证数据（两模型共用） |
 | `data/domain_papers_stats.txt` | 语料统计（文档数 / 切块数 / 字符数） |
 | `data/dataset_info.json`（新增条目） | 数据集注册（`domain_papers` / `domain_papers_eval`） |
@@ -292,9 +292,9 @@ prefix: "Multimodal memory" is a crucial concept that describes how an agent han
 | `examples/inference/qwen3_8b_domain_chat.yaml` | 续写/推理配置（仅模型键，§5 坑 4） |
 | `saves/Qwen3-4B-domain/lora/pt` | 4B 训练产物（adapter 66MB + checkpoint-30/40/45 + 曲线 + 指标） |
 | `saves/Qwen3-8B-domain/lora/pt` | 8B 训练产物（adapter 87MB + checkpoint-30/40/45 + 曲线 + 指标） |
-| `scripts/data/generate_domain_qa.py` | 蒸馏造数脚本（DeepSeek 出题 + quote 机械校验 + manifest 幂等，§12） |
-| `scripts/data/judge_domain_qa.py` | 裁判脚本（Kimi 三维评分三档分流 / PT vs SFT 对比，§12） |
-| `scripts/data/ask_compare.py` | 留出题自动问答回填（配合本地 api 服务，§12 坑 7） |
+| `.claude/skills/public-data-pipeline/scripts/generate_domain_qa.py` | 蒸馏造数脚本（DeepSeek 出题 + quote 机械校验 + manifest 幂等，§12） |
+| `.claude/skills/public-data-pipeline/scripts/judge_domain_qa.py` | 裁判脚本（Kimi 三维评分三档分流 / PT vs SFT 对比，§12） |
+| `.claude/skills/public-data-pipeline/scripts/ask_compare.py` | 留出题自动问答回填（配合本地 api 服务，§12 坑 7） |
 | `data/domain_env_qa{,_eval,_sft,_manifest,_judged,_compare}.jsonl` | 蒸馏数据全家桶（生成 → 过筛 → 对比；均不入库） |
 | `data/domain_env_qa_review.md` / `_compare_report.md` | 裁判报告（兼人工抽检文档）/ PT vs SFT 对比报告 |
 | `examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml` | 9B PT→SFT 续训配置（蒸馏 QA，§12） |
@@ -328,13 +328,13 @@ domain_env.jsonl 等距抽 60 块（固定梯子，冒烟=正式前缀）
 
 ```bash
 # ① 蒸馏造数（先冒烟 3 块人工看质量、调 prompt，再正式全量；60 次调用约 0.5 元 / 10~20 分钟）
-python scripts/data/generate_domain_qa.py --num 3 --eval-num 0   # 冒烟（是正式集的严格前缀）
-python scripts/data/generate_domain_qa.py                          # 正式 50 训练 + 10 留出
+python .claude/skills/public-data-pipeline/scripts/generate_domain_qa.py --num 3 --eval-num 0   # 冒烟（是正式集的严格前缀）
+python .claude/skills/public-data-pipeline/scripts/generate_domain_qa.py                          # 正式 50 训练 + 10 留出
 
 # ② 裁判过筛（先 --limit 3 看分数是否非全同，再全量）
-python scripts/data/judge_domain_qa.py --limit 3
-python scripts/data/judge_domain_qa.py
-python scripts/data/judge_domain_qa.py --promote "12,27"          # 人工复核改判（sft 集自动重写）
+python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --limit 3
+python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py
+python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --promote "12,27"          # 人工复核改判（sft 集自动重写）
 
 # ③ SFT（训练/推理命令都带四项环境变量，9B 必须 LF_ALLOW_TORCH29_CONV3D=1）
 LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1 \
@@ -342,14 +342,14 @@ LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_H
 # 正式：去掉 max_steps=3（约 18 步，几分钟）
 
 # ④ 留出 10 题对比（全自动：本地 api 服务自动问答，免人工 chat 粘贴）
-python scripts/data/judge_domain_qa.py --mode init-compare        # 生成对比骨架
+python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --mode init-compare        # 生成对比骨架
 # 起 PT 服务 → ask_compare 回填 answer_pt → 停服务；换 pt_then_sft adapter 重启 → 回填 answer_sft
 LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=... HF_HUB_OFFLINE=1 API_HOST=127.0.0.1 API_PORT=8000 \
   llamafactory-cli api examples/inference/qwen3_5_9b_domain_chat.yaml \
   adapter_name_or_path=saves/Qwen3.5-9B-domain-env/lora/pt
-PYTHONUTF8=1 python scripts/data/ask_compare.py --field answer_pt
-PYTHONUTF8=1 python scripts/data/ask_compare.py --field answer_sft   # 换 pt_then_sft adapter 重启服务后
-python scripts/data/judge_domain_qa.py --mode compare             # Kimi 对比评分 → _compare_report.md
+PYTHONUTF8=1 python .claude/skills/public-data-pipeline/scripts/ask_compare.py --field answer_pt
+PYTHONUTF8=1 python .claude/skills/public-data-pipeline/scripts/ask_compare.py --field answer_sft   # 换 pt_then_sft adapter 重启服务后
+python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --mode compare             # Kimi 对比评分 → _compare_report.md
 ```
 
 API 钥匙放项目根 `.env`（已被 gitignore）：`DEEPSEEK_API_KEY`（出题）/ `MOONSHOT_API_KEY`（裁判）。
@@ -400,4 +400,4 @@ API 钥匙放项目根 `.env`（已被 gitignore）：`DEEPSEEK_API_KEY`（出�
    裁判脚本已改为"参数组合逐级降级"（temperature=0+thinking关 → 省略temperature → 裸调），max_tokens 提到 2048。
    temperature=1 意味着**裁判打分有随机性**：--promote 重跑全量时边缘条目（value 3↔4）会抖动，属预期。
 7. **留出题自动评测可免人工**：`llamafactory-cli api <infer yaml> adapter_name_or_path=...` 起本地
-   OpenAI 兼容服务（默认模型名 gpt-3.5-turbo），`scripts/data/ask_compare.py` 逐题问答回填，免 20 次手动粘贴。
+   OpenAI 兼容服务（默认模型名 gpt-3.5-turbo），`.claude/skills/public-data-pipeline/scripts/ask_compare.py` 逐题问答回填，免 20 次手动粘贴。

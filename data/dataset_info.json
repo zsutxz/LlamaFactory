@@ -778,5 +778,15 @@
   },
   "domain_env_qa_eval": {
     "file_name": "domain_env_qa_eval.jsonl"
+  },
+  "domain_env_pref": {
+    "file_name": "domain_env_pref.jsonl",
+    "ranking": true,
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "chosen": "chosen",
+      "rejected": "rejected"
+    }
   }
 }

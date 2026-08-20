@@ -4,13 +4,13 @@
 两种用法：
 
 1) 默认模式(原 AI-agents 领域，硬编码源，无参即等价旧行为)：
-   python scripts/data/build_domain_corpus.py
+   python .claude/skills/public-data-pipeline/scripts/build_domain_corpus.py
    源: E:\\AI\\Book\\*.pdf, E:\\AI\\5-Day-AI-Agents-Intensive-Course-with-Google-2025\\*.pdf,
        E:\\AI\\teach-fish-to-swim\\** 的 raw-content.md / index.html
    出: data/domain_papers.jsonl / _eval.jsonl / _stats.txt
 
 2) 目录扫描模式(供 public-data-pipeline skill 采集的 data_raw 用)：
-   python scripts/data/build_domain_corpus.py --src data_raw --out-prefix domain_env
+   python .claude/skills/public-data-pipeline/scripts/build_domain_corpus.py --src data_raw --out-prefix domain_env
    源: 递归扫描 --src 下的 *.md / *.html / *.pdf (跳过 _ 前缀元数据文件)
    出: data/<prefix>.jsonl / _eval.jsonl / _stats.txt
 
@@ -31,7 +31,7 @@ SRC_PDF_DIRS = [
     r"E:\AI\5-Day-AI-Agents-Intensive-Course-with-Google-2025",  # 专业课程文档
 ]
 SRC_PAPER_ROOT = r"E:\AI\teach-fish-to-swim"
-OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))), "data")
 OUT_TRAIN = os.path.join(OUT_DIR, "domain_papers.jsonl")
 OUT_EVAL = os.path.join(OUT_DIR, "domain_papers_eval.jsonl")
 OUT_STATS = os.path.join(OUT_DIR, "domain_papers_stats.txt")

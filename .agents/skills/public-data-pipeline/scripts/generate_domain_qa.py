@@ -9,9 +9,9 @@
 用法（conda env llama-factory，需 PYTHONUTF8=1）：
 
 1) 冒烟（3 块；固定 60 级梯子使冒烟块必然是正式块的子集，产物不作废）：
-   python scripts/data/generate_domain_qa.py --num 3 --eval-num 0
+   python .claude/skills/public-data-pipeline/scripts/generate_domain_qa.py --num 3 --eval-num 0
 2) 正式（50 训练 + 10 留出评测；已生成的块按 sha1 自动跳过）：
-   python scripts/data/generate_domain_qa.py
+   python .claude/skills/public-data-pipeline/scripts/generate_domain_qa.py
 
 需项目根 .env 配置 DEEPSEEK_API_KEY（.env 已被 gitignore；勿写 .env.local——它被 git 追踪）。
 需 openai>=1.5.0。60 次调用约 72K in + 17K out（deepseek-chat 不足 0.5 元）。
@@ -24,7 +24,7 @@ import os
 import re
 import time
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 DATA_DIR = os.path.join(REPO, "data")
 ENV_FILE = os.path.join(REPO, ".env")
 

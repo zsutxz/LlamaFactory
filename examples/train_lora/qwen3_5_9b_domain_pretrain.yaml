@@ -5,7 +5,7 @@
 ### 验证集：data/domain_env_eval.jsonl（63 块，约 6 万 token）
 
 ### model
-model_name_or_path: model/Qwen3.5-9B-Base   # 本地基座（完整 bf16 权重约 18GB，训练时按 4-bit 量化加载）
+model_name_or_path: model/Qwen3.5-9B   # think/instruct 版（非 Base；完整 bf16 权重约 18GB，训练时按 4-bit 量化加载）
 trust_remote_code: true
 quantization_bit: 4                     # 9B bf16 权重放不进 16GB 卡，必须 4-bit 量化，否则 OOM
 quantization_method: bnb                # bitsandbytes nf4（RTX 5060 Ti / Blackwell sm_120 实测可用）
@@ -27,7 +27,7 @@ preprocessing_num_workers: 1            # Windows 下多进程 map 会卡死，1
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3.5-9B-domain-env/lora/pt  # 与 Qwen3-8B / domain_papers 产物分离，避免互相覆盖
+output_dir: saves/Qwen3.5-9B-domain-env/lora/pt_think  # think 版产物独立，勿与 Base 版 pt（§12 链条起点）互相覆盖
 logging_steps: 1
 save_steps: 10                          # 每 10 步存一个 checkpoint，防中断丢进度
 save_total_limit: 3

@@ -1,4 +1,4 @@
-### Qwen3.5-9B 领域 SFT：在 PT adapter 上 resume（方案 B：量化基座单 adapter 续训）
+### Qwen3.5-9B 领域 SFT（think 链）：在 pt_think adapter 上 resume（方案 B：量化基座单 adapter 续训）
 ### 数据：DeepSeek 蒸馏 QA（.claude/skills/public-data-pipeline/scripts/generate_domain_qa.py 生成 → GLM 裁判过筛 → domain_env_qa_sft）
 ### 环境变量(必需)：LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1
 ###   （LF_ALLOW_TORCH29_CONV3D 仅 9B 需要：torch 2.9.x + 视觉模块 Conv3D 触发 loader 防护闸，
@@ -12,7 +12,7 @@
 ###       ReasoningTemplate，与 PT/SFT 链路不对称，见 examples/inference/qwen3_5_9b_domain_chat.yaml）。
 
 ### model
-model_name_or_path: model/Qwen3.5-9B-Base     # 必须与 PT 一致（adapter_config.json 的 base）
+model_name_or_path: model/Qwen3.5-9B          # think/instruct 版（非 Base），与 pt_think 的 adapter_config base 一致
 trust_remote_code: true
 quantization_bit: 4                           # 必须与 PT 完全一致，否则 PT 的 A/B 挂不上量化基座
 quantization_method: bnb                      # bnb nf4
@@ -21,23 +21,23 @@ quantization_method: bnb                      # bnb nf4
 stage: sft                                   # 指令微调（区别于 PT 的纯文本续写：只对 assistant 回复算 loss）
 do_train: true
 finetuning_type: lora
-adapter_name_or_path: saves/Qwen3.5-9B-domain-env/lora/pt   # ← resume PT adapter（量化基座仅此 1 个）
+adapter_name_or_path: saves/Qwen3.5-9B-domain-env/lora/pt_think   # ← resume think 链 PT adapter（量化基座仅此 1 个）
 # 量化基座上切勿加 create_new_adapter: true（会报错 Cannot create new adapter upon a quantized model）
 lora_rank: 8                                 # 与 PT adapter_config 一致（r=8/alpha=16/all），否则 A/B 形状对不上
 lora_alpha: 16
 lora_target: all
 
 ### dataset
-dataset: domain_env_qa_sft                   # 裁判过筛的蒸馏 QA（alpaca 格式，约 40~48 条）
+dataset: domain_env_qa_sft                   # 裁判过筛的蒸馏 QA（alpaca 格式，305 条，扩量后）
 template: qwen3_5                            # 必须显式指定：Qwen3.5 的 chat_template 带 raise_exception
 cutoff_len: 2048
 preprocessing_num_workers: 1                 # Windows 多进程 map 会卡死，沿用 PT 的单进程
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3.5-9B-domain-env/lora/pt_then_sft   # 必须换新目录，别覆盖 PT 产物
+output_dir: saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # think 链产物独立，勿覆盖 Base 链 pt_then_sft（dpo yaml 仍指它）
 logging_steps: 1
-save_steps: 5                                # 约 18 步总量，存 3 个中途点
+save_steps: 5                                # 约 117 步总量（39×3），每 5 步存档、limit 3 只留最近
 save_total_limit: 3
 plot_loss: true
 overwrite_output_dir: true
@@ -46,7 +46,7 @@ report_to: none
 
 ### train
 per_device_train_batch_size: 1
-gradient_accumulation_steps: 8               # 有效 batch = 1 × 8 = 8 → 约 6 步/epoch
+gradient_accumulation_steps: 8               # 有效 batch = 1 × 8 = 8 → 305 条约 39 步/epoch
 learning_rate: 5.0e-5                        # resume 同一 adapter，比 PT(1e-4) 降一档，防把领域知识冲掉
 num_train_epochs: 3.0                        # 蒸馏批小，过 3 遍；loss 快速走低属预期（背老师答案），非过拟合警报
 lr_scheduler_type: cosine

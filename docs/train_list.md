@@ -401,3 +401,72 @@ API 钥匙放项目根 `.env`（已被 gitignore）：`DEEPSEEK_API_KEY`（出�
    temperature=1 意味着**裁判打分有随机性**：--promote 重跑全量时边缘条目（value 3↔4）会抖动，属预期。
 7. **留出题自动评测可免人工**：`llamafactory-cli api <infer yaml> adapter_name_or_path=...` 起本地
    OpenAI 兼容服务（默认模型名 gpt-3.5-turbo），`.claude/skills/public-data-pipeline/scripts/ask_compare.py` 逐题问答回填，免 20 次手动粘贴。
+
+---
+
+## 13. DPO 偏好对齐（think 链）：实测与 SFT vs DPO 留出对比（2026-08-24）
+
+### 13.1 训练与推理配置
+
+- 数据 `domain_env_pref` 213 条：chosen = SFT 过筛答案，rejected = DeepSeek 定向劣化，四类缺陷分布
+  数值篡改 40 / 主体张冠李戴 58 / 模糊化 54 / 关键截断 61。
+- think 链 SFT adapter 续训同一 adapter（量化基座单 adapter 限制不变）：54 步 / 2 epochs / lr 5e-6 /
+  pref_loss=sigmoid（ref=禁用 adapter 的量化基座，零额外显存）。loss 0.48→0.30，偏好准确率均值 0.93。
+  产物 `saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_then_dpo`；训练 yaml
+  `examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo.yaml`。
+- 推理 yaml `examples/inference/qwen3_5_9b_think_domain_chat.yaml`：adapter_name_or_path 直写
+  （默认 DPO 终点，key=value 可切）。`enable_thinking: false`——think 链数据本身无 `<think>` 内容，
+  训练时默认 True 使空 think 块计入 loss（template.py:475-478），推理=生成点注入同款空块，两边对齐。
+
+### 13.2 留出 39 题 A/B（kimi 裁判，全自动回填）
+
+manifest 扩量后 eval 池 10→39 题（含 4 道论文题充当 OOD 探针；零泄漏：eval 题不进 SFT 集与偏好对）。
+脚本升级：`judge_domain_qa.py --pair sft-dpo`（骨架/报告独立 `domain_env_think_qa_compare*`，防误写
+Base 链已填文件），`ask_compare.py` 加 `answer_dpo` 字段。
+
+| 指标 | SFT | DPO |
+|------|-----|-----|
+| 胜（39 题中，平 21） | 6 | **12** |
+| 总均分（术语/忠实/完整） | 2.88 | 2.94 |
+
+胜局模式：①完整性修复（乡镇企业题补回"农用地转用审批"前置程序）②数值修复（水源保护区逾期排污口
+罚款 50~100 万档答对，SFT 全错）③OOD 论文题找回基座知识（SFT 冲掉的分布被 DPO 部分拉回）。
+
+败局模式（更关键）：**恰好是训练缺陷类型的反向出现**——数值自信编造（森林法题编"违法所得十倍以上
+二十倍以下"罚款，原文是"恢复费用三倍以下"）、主体张冠李戴（排污口审批把水行政主管部门/流域管理机构
+编成国务院生态环境主管部门）、关键截断。DPO 学到的更像表层判别特征（"表述具体≈chosen"）而非
+"忠于原文"：在没把握处**错得更自信、更隐蔽**（SFT 的错偏模糊/缺失，肉眼易察觉）。
+
+### 13.3 判定与后续（诚实结论）
+
+12:6 胜率在 39 题上不显著（均分差 +0.06 为噪声级），但败局是系统性 reward-hacking 模式而非随机
+噪声。**建议：think 链默认暂不切 DPO，保持 SFT adapter**。修复路径按性价比：
+1. `generate_domain_pref.py` 定向补一批"数值忠实 vs 数值编造"偏好对（以本次败局题为种子），DPO 续 1 epoch 再判；
+2. 或降档重训（lr 减半 / 1 epoch），看败局消失而胜局保留；
+3. 法规场景若上 DPO，应用层必须加数值/条款号与原文的机械比对（裁判觉得"具体"≠数值对）。
+
+### 13.4 定向修复尝试（v2，同日）与负结果
+
+- **补对**：`generate_domain_pref.py` 新增 `--defects` 定向参数与第 5 类缺陷"无中生有"
+  （rejected = 编造原文不存在的具体细节 vs chosen 忠于原文，正面反制 v1 败局的编造型偏好）。
+  产出 62 条定向对（无中生有 38 / 数值篡改 12 / 主体张冠李戴 12），与 v1 合并为
+  `domain_env_pref_full` 275 条（数值密集种子 44 + 新题主体种子 33，避开 eval 题防泄漏）。
+- **重训**：从 SFT 基线重新续训（非 v1 产物叠加），超参全同 v1（单一变量=数据组成），70 步
+  loss 0.50→0.31、偏好准确率均值 0.95（v1 为 0.93）。产物 `saves/.../pt_think_sft_then_dpo_v2`；
+  训练 yaml `..._dpo_v2.yaml`。
+- **复评**（同 39 题、SFT 答案列原样复用）：**DPO 7 胜 / SFT 15 胜 / 平 17——比 v1（12:6）更差**。
+  - v1 败局题 16/18/31/36 **全部未修复**（题 16 仍编造同一套"违法所得十倍以上二十倍以下"罚款）；
+  - v1 胜局题系统性倒退（题 20：4.3→1.0，丢"逾期"框架、编造企业/个人分档；13/15/33 类似）——
+    无中生有占比过高（38/62）把模型推向"保守、少细节"，恰好破坏 v1 赢下的数值具体性；
+  - 噪声注：SFT 列两轮答案相同、单题分仍有 ±1 抖动（kimi temperature=1 属预期），但 DPO 的
+    跌落是同方向系统性，超出噪声解释。
+
+### 13.5 终局结论（think 链 DPO 收官）
+
+1. **默认定格 SFT adapter**（`qwen3_5_9b_think_domain_chat.yaml` 已设；v1/v2 DPO 产物保留可切）。
+2. 根因判定：败局题（森林法罚款档位/排污口审批主体）是**知识缺口**——PT 语料与 305 条 QA 未覆盖
+   相应条款细节，模型"不懂就编"。偏好优化只能微调取向，**修不了不知道的事**；无中生有负样本更会
+   教模型"少说细节"，副作用大于收益（v2 实测反复证实）。
+3. DPO 真正起作用的前置：先把败局题对应条款补进 PT 语料/SFT QA（数据层扩量覆盖处罚条款与审批
+   主体），知识到位后偏好层才学得动"忠于原文"。在 300 条量级的数据上，链路价值排序：
+   **数据覆盖 > PT > SFT >> DPO**。

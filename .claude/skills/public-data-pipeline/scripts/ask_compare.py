@@ -5,6 +5,8 @@
 1) 先起 api 服务（例：llamafactory-cli api <infer yaml> adapter_name_or_path=saves/.../pt）
 2) python .claude/skills/public-data-pipeline/scripts/ask_compare.py --field answer_pt            # 回填 PT 答案
 3) 换 pt_then_sft adapter 重启服务，再 --field answer_sft           # 回填 SFT 答案
+think 链 SFT vs DPO（骨架先 judge_domain_qa.py --mode init-compare --pair sft-dpo 生成）：
+  换 --compare data/domain_env_think_qa_compare.jsonl，--field answer_sft / answer_dpo 各跑一轮。
 只回填目标字段为空的行，已填的跳过（幂等，中断重跑不重复问）。
 """
 
@@ -20,7 +22,7 @@ DATA_DIR = os.path.join(REPO, "data")
 def main():
     ap = argparse.ArgumentParser(description="把对比骨架问题逐条发给本地 api 服务并回填答案")
     ap.add_argument("--compare", default=os.path.join(DATA_DIR, "domain_env_qa_compare.jsonl"), help="对比骨架文件")
-    ap.add_argument("--field", choices=["answer_pt", "answer_sft"], required=True, help="本轮回填哪个字段")
+    ap.add_argument("--field", choices=["answer_pt", "answer_sft", "answer_dpo"], required=True, help="本轮回填哪个字段")
     ap.add_argument("--base-url", default="http://127.0.0.1:8000/v1", help="本地 api 服务地址")
     ap.add_argument("--api-key", default="0", help="API_KEY(本地服务未设鉴权时随便填)")
     ap.add_argument("--temperature", type=float, default=0.3, help="生成温度(两个 adapter 保持一致才公平)")

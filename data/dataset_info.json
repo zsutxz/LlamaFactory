@@ -788,5 +788,15 @@
       "chosen": "chosen",
       "rejected": "rejected"
     }
+  },
+  "domain_env_pref_full": {
+    "file_name": "domain_env_pref_full.jsonl",
+    "ranking": true,
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "chosen": "chosen",
+      "rejected": "rejected"
+    }
   }
 }

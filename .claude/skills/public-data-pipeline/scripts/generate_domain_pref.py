@@ -35,12 +35,15 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.d
 DATA_DIR = os.path.join(REPO, "data")
 ENV_FILE = os.path.join(REPO, ".env")
 
-# 缺陷类型：名称 → 给模型的改写指令。轮转顺序即列表序。
+# 缺陷类型：名称 → 给模型的改写指令。默认轮转只取原 4 类（顺序不变，保持 v1 行为可复现）；
+# 无中生有 仅在 --defects 显式点名时参与轮转（2026-08-24 DPO A/B 败局分析：
+# 模型在没把握处"编造更具体的数值/主体"且更自信——需要 rejected=编造细节、chosen=忠于原文的反向信号）。
 DEFECTS = [
     ("数值篡改", "把答案中的关键数值（浓度限值/罚款倍数/百分比/年限等）改成错误但数量级合理的值；其余内容保持原样。"),
     ("主体张冠李戴", "把答案中的责任主体、监管部门或适用对象调换成同领域里另一个看似合理的主体；其余内容保持原样。"),
     ("关键截断", "保留答案的前半段和整体语气，但删去最关键的裁定结论或数值细节，让答案方向对却无法落地执行。"),
     ("模糊化", "把答案里所有具体数值和明确条款替换成『有关部门依法处理』『按规定执行』式的含混表述，长度相近。"),
+    ("无中生有", "在保持答案原有内容的基础上，额外编造原文中不存在的具体细节（如新增罚款数额、审批部门、时限、条款号），使答案看起来更详尽更自信；原有内容保持原样。"),
 ]
 
 SYSTEM_PROMPT = (
@@ -223,6 +226,8 @@ def main():
     ap.add_argument("--api-key-env", default="DEEPSEEK_API_KEY", help="从 .env 读哪个键名")
     ap.add_argument("--sleep", type=float, default=1.0, help="相邻 API 调用间隔秒(默认 1.0)")
     ap.add_argument("--retries", type=int, default=3, help="单条 API 失败重试次数(指数退避 2/4/8s)")
+    ap.add_argument("--defects", default="数值篡改,主体张冠李戴,关键截断,模糊化",
+                    help="逗号分隔的缺陷轮转清单(默认原 4 类全轮转=历史行为；定向批次可只选子集或点名无中生有)")
     ap.add_argument("--force", action="store_true", help="丢弃已有 manifest 重新生成")
     args = ap.parse_args()
 
@@ -244,7 +249,16 @@ def main():
     qa_rows = load_qa(args.qa)
     if args.limit > 0:
         qa_rows = qa_rows[: args.limit]
-    print(f"读入 QA {len(qa_rows)} 条(来自 {args.qa})")
+    wanted = [d.strip() for d in args.defects.split(",") if d.strip()]
+    defect_pool = [d for d in DEFECTS if d[0] in wanted]
+    missing = [name for name in wanted if name not in {d[0] for d in DEFECTS}]
+    if missing:
+        print(f"[exit] --defects 含未知缺陷名: {missing}；可用: {[d[0] for d in DEFECTS]}")
+        return
+    if not defect_pool:
+        print("[exit] --defects 过滤后为空")
+        return
+    print(f"读入 QA {len(qa_rows)} 条(来自 {args.qa})；缺陷轮转: {[d[0] for d in defect_pool]}")
 
     records, done = ([], set()) if args.force else load_manifest(out_manifest)
     if args.force and os.path.exists(out_manifest):
@@ -259,7 +273,7 @@ def main():
             print(f"[{n}/{len(qa_rows)}] 已生成，跳过")
             continue
 
-        defect_name, defect_desc = DEFECTS[(n - 1) % len(DEFECTS)]  # 行序轮转，确定性
+        defect_name, defect_desc = defect_pool[(n - 1) % len(defect_pool)]  # 行序轮转，确定性
         user_content = USER_TEMPLATE.format(question=question, answer=answer, defect_desc=defect_desc)
         raw, usage = call_llm(client, args.model, user_content, args.retries)
         time.sleep(args.sleep)

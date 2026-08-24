@@ -12,12 +12,15 @@
    全量: python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py
    改判: python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --promote "12,27"（复核合格条目强制入 sft 集）
 
-2) init-compare：从 manifest 的 eval 条目生成对比骨架（question/reference 已填，
-   answer_pt/answer_sft 留空，人工用 llamafactory-cli chat 各答 10 题后粘入）：
+2) init-compare：从 manifest 的 eval 条目生成对比骨架（question/reference 已填，答案留空）：
    python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --mode init-compare
+   --pair pt-sft(默认) 生成 answer_pt/answer_sft 骨架（Base 链）；
+   --pair sft-dpo 生成 answer_sft/answer_dpo 骨架（think 链），骨架/报告默认切到
+   domain_env_think_qa_compare*，防误写 Base 链已填文件。
 
 3) compare：对填好的骨架逐题评分（两答案各三维分 + prefer），出对比报告：
    python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --mode compare
+   python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --mode compare --pair sft-dpo
 
 需项目根 .env 配置 MOONSHOT_API_KEY（.env 已被 gitignore；勿写 .env.local——它被 git 追踪）。
 裁判默认 kimi-k3（钥匙来自 platform.moonshot.cn；模型名以 Moonshot 文档为准）。
@@ -70,6 +73,12 @@ COMPARE_TEMPLATE = """【原文片段】
 
 只输出一个 json 对象，不要 markdown 代码块，不要任何多余文字：
 {{"A": {{"terminology": 4, "faithfulness": 3, "completeness": 4}}, "B": {{"terminology": 5, "faithfulness": 4, "completeness": 4}}, "prefer": "A|B|tie 三选一", "comment": "一句话理由"}}"""
+
+# 对比对子：骨架字段名 + 报告短标签（A=旧阶段，B=新阶段；init-compare/compare 按 pair 读写）
+COMPARE_PAIRS = {
+    "pt-sft": ("answer_pt", "answer_sft", "pt", "sft"),
+    "sft-dpo": ("answer_sft", "answer_dpo", "sft", "dpo"),
+}
 
 
 def load_env(path):
@@ -259,47 +268,49 @@ def mode_init_compare(args):
     """对比模式第一步：从 manifest eval 条目生成对比骨架。"""
     records = [json.loads(l) for l in open(args.manifest, encoding="utf-8") if l.strip()]
     evals = [r for r in records if r.get("status") == "ok" and r.get("split") == "eval"]
+    field_a, field_b, _, _ = COMPARE_PAIRS[args.pair]
     with open(args.compare, "w", encoding="utf-8") as f:
         for r in evals:
             row = {"question": r["question"], "reference": r["answer"], "block": r["block"],
-                   "answer_pt": "", "answer_sft": ""}  # 两个空位：人工 chat 后粘入
+                   field_a: "", field_b: ""}  # 两个空位：ask_compare.py 回填
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    print(f"对比骨架已生成: {args.compare}（{len(evals)} 题，请填 answer_pt / answer_sft）")
+    print(f"对比骨架已生成: {args.compare}（{len(evals)} 题，请填 {field_a} / {field_b}）")
 
 
 def mode_compare(client, args):
-    """对比模式第二步：逐题给 PT/SFT 两答案评分 + 偏好，出报告。"""
+    """对比模式第二步：逐题给两答案（--pair 决定字段/标签）评分 + 偏好，出报告。"""
+    field_a, field_b, name_a, name_b = COMPARE_PAIRS[args.pair]
     rows = [json.loads(l) for l in open(args.compare, encoding="utf-8") if l.strip()]
     dims = ("terminology", "faithfulness", "completeness")
     results = []
     for n, row in enumerate(rows, 1):
-        if not row.get("answer_pt", "").strip() or not row.get("answer_sft", "").strip():
+        if not row.get(field_a, "").strip() or not row.get(field_b, "").strip():
             print(f"[skip] 第 {n} 题答案未填全，跳过")
             continue
-        # 奇偶行交换 A/B 位置，降低裁判的位置偏差；评分后映射回 pt/sft
+        # 奇偶行交换 A/B 位置，降低裁判的位置偏差；评分后映射回 a/b
         swap = n % 2 == 0
-        answer_a, answer_b = (row["answer_sft"], row["answer_pt"]) if swap else (row["answer_pt"], row["answer_sft"])
+        answer_a, answer_b = (row[field_b], row[field_a]) if swap else (row[field_a], row[field_b])
         user_content = COMPARE_TEMPLATE.format(
             block=row["block"], question=row["question"], reference=row["reference"],
             answer_a=answer_a, answer_b=answer_b,
         )
         raw = call_llm(client, args.model, COMPARE_SYSTEM, user_content, args.retries)
         obj = parse_json_block(raw or "") if raw else None
-        pt_scores = {k: 0 for k in dims}
-        sft_scores = {k: 0 for k in dims}
+        scores_a = {k: 0 for k in dims}
+        scores_b = {k: 0 for k in dims}
         prefer = "tie"
         if obj:
             src_a, src_b = obj.get("A", {}), obj.get("B", {})
             for k in dims:
                 a, b = clamp_score(src_a.get(k)) or 0, clamp_score(src_b.get(k)) or 0
-                (sft_scores if swap else pt_scores)[k] = a
-                (pt_scores if swap else sft_scores)[k] = b
+                (scores_b if swap else scores_a)[k] = a
+                (scores_a if swap else scores_b)[k] = b
             raw_prefer = str(obj.get("prefer", "tie")).strip().lower()
-            prefer = {"a": "sft" if swap else "pt", "b": "pt" if swap else "sft"}.get(raw_prefer, "tie")
-        results.append({"idx": n, "question": row["question"], "answer_pt": row["answer_pt"],
-                        "answer_sft": row["answer_sft"], "pt": pt_scores, "sft": sft_scores,
+            prefer = {"a": name_b if swap else name_a, "b": name_a if swap else name_b}.get(raw_prefer, "tie")
+        results.append({"idx": n, "question": row["question"], field_a: row[field_a],
+                        field_b: row[field_b], name_a: scores_a, name_b: scores_b,
                         "prefer": prefer, "comment": (obj or {}).get("comment", "")})
-        print(f"[{n}/{len(rows)}] pt均{sum(pt_scores.values()) / 3:.1f} sft均{sum(sft_scores.values()) / 3:.1f} → {prefer}")
+        print(f"[{n}/{len(rows)}] {name_a}均{sum(scores_a.values()) / 3:.1f} {name_b}均{sum(scores_b.values()) / 3:.1f} → {prefer}")
         time.sleep(args.sleep)
 
     def model_mean(key):
@@ -307,28 +318,28 @@ def mode_compare(client, args):
             return 0.0
         return round(sum(sum(r[key].values()) for r in results) / (3 * len(results)), 2)
 
-    n_pt = sum(1 for r in results if r["prefer"] == "pt")
-    n_sft = sum(1 for r in results if r["prefer"] == "sft")
+    n_a = sum(1 for r in results if r["prefer"] == name_a)
+    n_b = sum(1 for r in results if r["prefer"] == name_b)
     n_tie = sum(1 for r in results if r["prefer"] == "tie")
     lines = [
-        f"# PT vs SFT 留出题对比报告（裁判 {args.model}，{time.strftime('%Y-%m-%d %H:%M')}）", "",
-        f"题数: {len(results)}；SFT 胜 {n_sft} / PT 胜 {n_pt} / 平 {n_tie}", "",
-        f"PT  总均分: {model_mean('pt')}（术语/忠实/完整均值见下）",
-        f"SFT 总均分: {model_mean('sft')}", "",
-        "| # | PT 均 | SFT 均 | prefer |", "|---|---|---|---|",
+        f"# {name_a.upper()} vs {name_b.upper()} 留出题对比报告（裁判 {args.model}，{time.strftime('%Y-%m-%d %H:%M')}）", "",
+        f"题数: {len(results)}；{name_b.upper()} 胜 {n_b} / {name_a.upper()} 胜 {n_a} / 平 {n_tie}", "",
+        f"{name_a.upper()}  总均分: {model_mean(name_a)}（术语/忠实/完整均值见下）",
+        f"{name_b.upper()} 总均分: {model_mean(name_b)}", "",
+        f"| # | {name_a.upper()} 均 | {name_b.upper()} 均 | prefer |", "|---|---|---|---|",
     ]
     for r in results:
-        lines.append(f"| {r['idx']} | {sum(r['pt'].values()) / 3:.1f} | {sum(r['sft'].values()) / 3:.1f} | {r['prefer']} |")
+        lines.append(f"| {r['idx']} | {sum(r[name_a].values()) / 3:.1f} | {sum(r[name_b].values()) / 3:.1f} | {r['prefer']} |")
     lines += ["", "## 逐题明细", ""]
     for r in results:
         lines += [
             f"### [题 {r['idx']}] prefer={r['prefer']}",
-            f"**问题**：{r['question']}", f"**PT 答**：{r['answer_pt']}", f"**SFT 答**：{r['answer_sft']}",
+            f"**问题**：{r['question']}", f"**{name_a.upper()} 答**：{r[field_a]}", f"**{name_b.upper()} 答**：{r[field_b]}",
             f"裁判：{r['comment']}", "",
         ]
     with open(args.compare_report, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-    print(f"对比报告: {args.compare_report}（SFT {n_sft} 胜 / PT {n_pt} 胜 / 平 {n_tie}）")
+    print(f"对比报告: {args.compare_report}（{name_b.upper()} {n_b} 胜 / {name_a.upper()} {n_a} 胜 / 平 {n_tie}）")
 
 
 def main():
@@ -343,6 +354,8 @@ def main():
     ap.add_argument("--compare", default=os.path.join(DATA_DIR, "domain_env_qa_compare.jsonl"),
                     help="对比骨架文件(init-compare 写 / compare 读)")
     ap.add_argument("--compare-report", default=os.path.join(DATA_DIR, "domain_env_qa_compare_report.md"), help="对比报告输出")
+    ap.add_argument("--pair", choices=list(COMPARE_PAIRS), default="pt-sft",
+                    help="对比对(默认 pt-sft=Base 链；sft-dpo=think 链，骨架/报告默认切到 think 文件)")
     ap.add_argument("--split", choices=["train", "eval", "all"], default="all", help="judge 模式评哪个 split(默认 all)")
     ap.add_argument("--limit", type=int, default=0, help="只评前 N 条(冒烟用；0=全部)")
     ap.add_argument("--threshold", type=float, default=4.0, help="pass 的均分线(默认 4.0)")
@@ -353,6 +366,14 @@ def main():
     ap.add_argument("--sleep", type=float, default=1.0, help="相邻 API 调用间隔秒(默认 1.0)")
     ap.add_argument("--retries", type=int, default=3, help="单条 API 失败重试次数")
     args = ap.parse_args()
+
+    # sft-dpo 走独立骨架/报告（think 链），防 init-compare 误清空 Base 链已填文件；
+    # 用户显式传了非默认 --compare/--compare-report 时以用户为准
+    if args.pair == "sft-dpo":
+        if args.compare == os.path.join(DATA_DIR, "domain_env_qa_compare.jsonl"):
+            args.compare = os.path.join(DATA_DIR, "domain_env_think_qa_compare.jsonl")
+        if args.compare_report == os.path.join(DATA_DIR, "domain_env_qa_compare_report.md"):
+            args.compare_report = os.path.join(DATA_DIR, "domain_env_think_qa_compare_report.md")
 
     if args.mode == "init-compare":  # 纯本地，不需要钥匙
         mode_init_compare(args)

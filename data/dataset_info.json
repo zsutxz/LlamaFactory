@@ -808,5 +808,8 @@
       "chosen": "chosen",
       "rejected": "rejected"
     }
+  },
+  "domain_env_qa_t": {
+    "file_name": "domain_env_qa_t_sft.jsonl"
   }
 }

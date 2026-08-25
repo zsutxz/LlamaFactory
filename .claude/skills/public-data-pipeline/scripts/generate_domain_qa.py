@@ -200,6 +200,7 @@ def main():
     ap.add_argument("--retries", type=int, default=3, help="单块 API 失败重试次数(指数退避 2/4/8s)")
     ap.add_argument("--min-block-chars", type=int, default=400, help="过短块不入选(默认 400 字符)")
     ap.add_argument("--force", action="store_true", help="丢弃已有 manifest 重新生成")
+    ap.add_argument("--blocks", default="", help="定向出题：逗号分隔的语料块索引(如 '479,531')，绕过随机梯子，全部记 train")
     args = ap.parse_args()
 
     api_key = load_env(ENV_FILE).get(args.api_key_env, "")
@@ -220,13 +221,22 @@ def main():
     out_manifest = os.path.join(out_dir, f"{args.out_prefix}_manifest.jsonl")
 
     blocks = load_blocks(args.src)
-    candidates = [i for i, b in enumerate(blocks) if len(b) >= args.min_block_chars]
-    ladder_size = max(LADDER_SIZE, args.num + args.eval_num)
-    ladder = build_ladder(candidates, ladder_size)
-    train_idx = ladder[: args.num]
-    eval_idx = ladder[len(ladder) - args.eval_num :] if args.eval_num > 0 else []
-    print(f"语料 {len(blocks)} 块，合格候选 {len(candidates)} 块，梯子 {len(ladder)} 级")
-    print(f"目标: train {len(train_idx)} 块 + eval {len(eval_idx)} 块")
+    if args.blocks:
+        wanted = [int(x) for x in args.blocks.split(",") if x.strip()]
+        bad = [i for i in wanted if not (0 <= i < len(blocks))]
+        if bad:
+            print(f"[exit] --blocks 越界: {bad}（语料共 {len(blocks)} 块）")
+            return
+        train_idx, eval_idx = wanted, []
+        print(f"[blocks] 定向出题 {len(wanted)} 块: {wanted}（注意：绕过随机梯子，不保证与既有 eval 块不相交）")
+    else:
+        candidates = [i for i, b in enumerate(blocks) if len(b) >= args.min_block_chars]
+        ladder_size = max(LADDER_SIZE, args.num + args.eval_num)
+        ladder = build_ladder(candidates, ladder_size)
+        train_idx = ladder[: args.num]
+        eval_idx = ladder[len(ladder) - args.eval_num :] if args.eval_num > 0 else []
+        print(f"语料 {len(blocks)} 块，合格候选 {len(candidates)} 块，梯子 {len(ladder)} 级")
+        print(f"目标: train {len(train_idx)} 块 + eval {len(eval_idx)} 块")
 
     records, done = ([], set()) if args.force else load_manifest(out_manifest)
     if args.force and os.path.exists(out_manifest):

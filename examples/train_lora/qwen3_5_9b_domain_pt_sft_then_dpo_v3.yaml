@@ -1,0 +1,57 @@
+### Qwen3.5-9B 领域 DPO v3（think 链）：on-policy 负样本 + IPO
+### 方法论切换（区别于 v1/v2 的 off-policy 人工劣化）：
+###   rejected = SFT 模型自己在训练题上的真实失败输出（temperature 0.3 采样，305 题自答，
+###   kimi 裁判 vs reference，取 prefer=ref ∧ 分差≥1.5 ∧ model≤2.5 的 141 题），
+###   chosen = 教师 reference——负样本落在模型可达分布内，学"避免自己会犯的错"。
+###   IPO loss（pref_loss=ipo）：小数据集防过拟合有理论保证（v1/v2 的 sigmoid 版训练 acc 0.93+
+###   而留出零/负增益即为过拟合证据）。
+### 裁判锚定偏差注：ref-model 比对中 reference 兼任【参考答案】，REF 254 胜有水分，
+###   故构造规则偏保守（大分差+低模型分双门槛）。
+### 数据：domain_env_pref_v3（141 对，on-policy）；基线：pt_think_then_sft 重新续训
+### 环境变量(必需)：LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1
+### 启动：llamafactory-cli train examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo_v3.yaml
+
+### model
+model_name_or_path: model/Qwen3.5-9B          # think/instruct 版（非 Base），与 pt_think_then_sft 的 adapter_config base 一致
+trust_remote_code: true
+quantization_bit: 4                           # 必须与 PT/SFT 完全一致，否则 adapter 挂不上量化基座
+quantization_method: bnb                      # bnb nf4
+
+### method
+stage: dpo
+do_train: true
+finetuning_type: lora
+adapter_name_or_path: saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # ← SFT 基线重训（非 v1/v2 产物叠加）
+# 量化基座上切勿加 create_new_adapter: true（Cannot create new adapter upon a quantized model）
+lora_rank: 8                                 # 与 PT/SFT 一致，否则 A/B 形状对不上
+lora_alpha: 16
+lora_target: all
+pref_beta: 0.1                               # IPO 同样用 beta 控制 ref 锚定强度，官方默认 0.1
+pref_loss: ipo                               # IPO：小数据防过拟合（v1/v2 sigmoid 已实测过拟合）
+
+### dataset
+dataset: domain_env_pref_v3                  # on-policy 141 对（模型真实失败 vs 教师 reference）
+template: qwen3_5                            # 与 SFT/chat 推理一致（ReasoningTemplate，勿改 qwen3_5_nothink）
+cutoff_len: 2048
+preprocessing_num_workers: 1                 # Windows 多进程 map 会卡死，沿用单进程
+dataloader_num_workers: 0
+
+### output
+output_dir: saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_then_dpo_v3   # 独立目录，勿覆盖 v1/v2
+logging_steps: 1
+save_steps: 15                               # 141条×2epoch≈36步总量，中途存 2 次
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: none
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8               # 有效 batch = 8
+learning_rate: 5.0e-6                        # 沿用 v1/v2（lr 不动，本实验变量=数据来源+loss）
+num_train_epochs: 2.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000

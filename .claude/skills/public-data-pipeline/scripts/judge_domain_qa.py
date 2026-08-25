@@ -78,6 +78,9 @@ COMPARE_TEMPLATE = """【原文片段】
 COMPARE_PAIRS = {
     "pt-sft": ("answer_pt", "answer_sft", "pt", "sft"),
     "sft-dpo": ("answer_sft", "answer_dpo", "sft", "dpo"),
+    # on-policy 负样本筛选：reference(教师答案) vs answer_sft(模型自答)，
+    # prefer=ref 或分差大的行 = 模型真实失败样本 → 偏好对 (chosen=reference, rejected=answer_sft)
+    "ref-model": ("reference", "answer_sft", "ref", "model"),
 }
 
 
@@ -374,6 +377,11 @@ def main():
             args.compare = os.path.join(DATA_DIR, "domain_env_think_qa_compare.jsonl")
         if args.compare_report == os.path.join(DATA_DIR, "domain_env_qa_compare_report.md"):
             args.compare_report = os.path.join(DATA_DIR, "domain_env_think_qa_compare_report.md")
+    elif args.pair == "ref-model":
+        if args.compare == os.path.join(DATA_DIR, "domain_env_qa_compare.jsonl"):
+            args.compare = os.path.join(DATA_DIR, "domain_env_onpolicy.jsonl")
+        if args.compare_report == os.path.join(DATA_DIR, "domain_env_qa_compare_report.md"):
+            args.compare_report = os.path.join(DATA_DIR, "domain_env_onpolicy_report.md")
 
     if args.mode == "init-compare":  # 纯本地，不需要钥匙
         mode_init_compare(args)

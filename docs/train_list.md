@@ -461,9 +461,28 @@ Base 链已填文件），`ask_compare.py` 加 `answer_dpo` 字段。
   - 噪声注：SFT 列两轮答案相同、单题分仍有 ±1 抖动（kimi temperature=1 属预期），但 DPO 的
     跌落是同方向系统性，超出噪声解释。
 
-### 13.5 终局结论（think 链 DPO 收官）
+### 13.5 v3（on-policy 数据 + IPO loss，2026-08-25）与第三次负结果
 
-1. **默认定格 SFT adapter**（`qwen3_5_9b_think_domain_chat.yaml` 已设；v1/v2 DPO 产物保留可切）。
+- **变量**（相对 v2 两个变量同换，其余超参全同，仍从 SFT 基线重训）：
+  1. **数据换 on-policy**：`judge_domain_qa.py` 新增 `ref-model` 对，用 39 题 reference(教师) vs
+     answer_sft(模型自答) 裁判挖真实失败样本（prefer=ref 或分差大者），产出
+     `domain_env_pref_v3_onpolicy` 141 对（chosen=教师 reference、rejected=模型自己的错误答案，
+     彻底避开"人工编造 rejected"分布偏移）；
+  2. **loss 换 IPO**（`pref_loss: ipo`, beta 0.1）：v1/v2 sigmoid 偏好准确率 0.93/0.95 实测过拟合，
+     IPO 不强拟合训练对。
+- **训练特征符合预期**：loss 贴 ln2≈0.693 缓慢移动（终值 0.682），偏好准确率仅 0.79（对比 v1/v2
+  的 0.93+，确认没过拟合训练对）；36 步 25 分钟，产物 `saves/.../pt_think_sft_then_dpo_v3`。
+- **复评（同 39 题，SFT 列复用；本轮起 3 轮取逐题多数决压裁判方差）**：
+  - r1/r2/r3 = 5/18/16、7/17/15、10/14/15（DPO 胜），**多数决 DPO 7 / SFT 17 / 平 15**；
+  - 三轮均分 SFT 2.99 vs DPO 2.70（v2 为 3.0 vs 2.68）——与 v2 统计上无差别；13/39 题三轮意见
+    分裂（temperature=1 属预期），已按多数决归并；
+  - **判定：数据来源(on-policy)与损失函数(IPO)均换仍无法翻盘 → 排除"数据分布偏移/过拟合"两个
+    假设，第三次负结果强化 13.6 根因判定：败在知识缺口，偏好层修不了。**
+
+### 13.6 终局结论（think 链 DPO 收官）
+
+1. **默认定格 SFT adapter**（`qwen3_5_9b_think_domain_chat.yaml` 已设；v1/v2/v3 DPO 产物保留可切；
+   v3 on-policy+IPO 已于 08-25 复评确认同样无法翻盘，见 13.5）。
 2. 根因判定：败局题（森林法罚款档位/排污口审批主体）是**知识缺口**——PT 语料与 305 条 QA 未覆盖
    相应条款细节，模型"不懂就编"。偏好优化只能微调取向，**修不了不知道的事**；无中生有负样本更会
    教模型"少说细节"，副作用大于收益（v2 实测反复证实）。

@@ -21,7 +21,7 @@ quantization_method: bnb                      # bnb nf4
 stage: sft                                   # 指令微调（区别于 PT 的纯文本续写：只对 assistant 回复算 loss）
 do_train: true
 finetuning_type: lora
-adapter_name_or_path: saves/Qwen3.5-9B-domain-env/lora/pt_think   # ← resume think 链 PT adapter（量化基座仅此 1 个）
+adapter_name_or_path: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think   # ← resume think 链 PT adapter（量化基座仅此 1 个）
 # 量化基座上切勿加 create_new_adapter: true（会报错 Cannot create new adapter upon a quantized model）
 lora_rank: 8                                 # 与 PT adapter_config 一致（r=8/alpha=16/all），否则 A/B 形状对不上
 lora_alpha: 16
@@ -29,13 +29,14 @@ lora_target: all
 
 ### dataset
 dataset: domain_env_qa_sft                   # 裁判过筛的蒸馏 QA（alpaca 格式，305 条，扩量后）
+dataset_dir: train_test/data
 template: qwen3_5                            # 必须显式指定：Qwen3.5 的 chat_template 带 raise_exception
 cutoff_len: 2048
 preprocessing_num_workers: 1                 # Windows 多进程 map 会卡死，沿用 PT 的单进程
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # think 链产物独立，勿覆盖 Base 链 pt_then_sft（dpo yaml 仍指它）
+output_dir: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # think 链产物独立，勿覆盖 Base 链 pt_then_sft（dpo yaml 仍指它）
 logging_steps: 1
 save_steps: 5                                # 约 117 步总量（39×3），每 5 步存档、limit 3 只留最近
 save_total_limit: 3

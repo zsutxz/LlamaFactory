@@ -9,7 +9,7 @@
 ###   故构造规则偏保守（大分差+低模型分双门槛）。
 ### 数据：domain_env_pref_v3（141 对，on-policy）；基线：pt_think_then_sft 重新续训
 ### 环境变量(必需)：LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1
-### 启动：llamafactory-cli train examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo_v3.yaml
+### 启动：llamafactory-cli train train_test/examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo_v3.yaml
 
 ### model
 model_name_or_path: model/Qwen3.5-9B          # think/instruct 版（非 Base），与 pt_think_then_sft 的 adapter_config base 一致
@@ -21,7 +21,7 @@ quantization_method: bnb                      # bnb nf4
 stage: dpo
 do_train: true
 finetuning_type: lora
-adapter_name_or_path: saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # ← SFT 基线重训（非 v1/v2 产物叠加）
+adapter_name_or_path: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # ← SFT 基线重训（非 v1/v2 产物叠加）
 # 量化基座上切勿加 create_new_adapter: true（Cannot create new adapter upon a quantized model）
 lora_rank: 8                                 # 与 PT/SFT 一致，否则 A/B 形状对不上
 lora_alpha: 16
@@ -31,13 +31,14 @@ pref_loss: ipo                               # IPO：小数据防过拟合（v1/
 
 ### dataset
 dataset: domain_env_pref_v3                  # on-policy 141 对（模型真实失败 vs 教师 reference）
+dataset_dir: train_test/data
 template: qwen3_5                            # 与 SFT/chat 推理一致（ReasoningTemplate，勿改 qwen3_5_nothink）
 cutoff_len: 2048
 preprocessing_num_workers: 1                 # Windows 多进程 map 会卡死，沿用单进程
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_then_dpo_v3   # 独立目录，勿覆盖 v1/v2
+output_dir: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_then_dpo_v3   # 独立目录，勿覆盖 v1/v2
 logging_steps: 1
 save_steps: 15                               # 141条×2epoch≈36步总量，中途存 2 次
 save_total_limit: 3

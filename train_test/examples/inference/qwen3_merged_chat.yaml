@@ -1,8 +1,8 @@
 # Qwen3-4B-Thinking 合并后模型推理（merged/，自包含完整模型）
-# 启动: llamafactory-cli chat examples/inference/qwen3_merged_chat.yaml
+# 启动: llamafactory-cli chat train_test/examples/inference/qwen3_merged_chat.yaml
 # 与 qwen3_lora_chat.yaml 的区别：model_name_or_path 指向 merged 完整模型，无 adapter_name_or_path
 # 中文输入必须 PYTHONUTF8=1（见 docs/learning.md 0.3）
-model_name_or_path: saves/Qwen3-4B-Thinking/merged
+model_name_or_path: train_test/saves/Qwen3-4B-Thinking/merged
 template: qwen3
 enable_thinking: true
 infer_backend: huggingface

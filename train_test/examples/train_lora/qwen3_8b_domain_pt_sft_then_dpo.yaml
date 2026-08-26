@@ -1,7 +1,7 @@
 ### Qwen3-8B 领域 DPO：在 PT→SFT adapter 上继续偏好对齐
 ### 目的：验证 PT→SFT→DPO 链路能跑通。用自带 dpo_zh_demo（中文偏好数据）跑通流程。
 ### 数据：dpo_zh_demo 是通用偏好对，不是领域偏好——跑通后需换成你自己的领域偏好数据
-###       （构造 chosen/rejected 对，见本目录下其它示例与 data/dataset_info.json 的 dpo_zh_demo 注册项）。
+###       （构造 chosen/rejected 对，见本目录下其它示例与 train_test/data/dataset_info.json 的 dpo_zh_demo 注册项）。
 ###
 ### 机制：与 PT→SFT 相同，adapter_name_or_path 把 SFT 的 adapter 当 LoRA 初值加载，
 ###       DPO loss 继续更新【同一个】adapter。量化基座仍只允许挂 1 个 adapter
@@ -13,7 +13,7 @@
 ###
 ### 时序：DPO 必须在【已经 SFT 过】的模型上做（裸 LoRA / 裸基座直接 DPO 效果差）。
 ###       所以链路是 PT → SFT → DPO，本配置 resume 的就是 SFT 产物 pt_then_sft。
-###       前置条件：saves/Qwen3-8B-domain/lora/pt_then_sft 下已有 SFT 的 adapter 产物。
+###       前置条件：train_test/saves/Qwen3-8B-domain/lora/pt_then_sft 下已有 SFT 的 adapter 产物。
 
 ### model
 model_name_or_path: model/Qwen3-8B      # 必须与 PT/SFT 一致
@@ -25,7 +25,7 @@ quantization_method: bnb                # bnb nf4
 stage: dpo                              # 偏好优化：对 chosen 提升奖励、对 rejected 压低，拉大两者差距
 do_train: true
 finetuning_type: lora
-adapter_name_or_path: saves/Qwen3-8B-domain/lora/pt_then_sft   # ← resume SFT adapter（量化基座仅此 1 个）
+adapter_name_or_path: train_test/saves/Qwen3-8B-domain/lora/pt_then_sft   # ← resume SFT adapter（量化基座仅此 1 个）
 # 量化基座上切勿加 create_new_adapter: true（会报错 Cannot create new adapter upon a quantized model）
 lora_rank: 8                            # 与 PT/SFT 一致，否则 A/B 形状对不上
 lora_alpha: 16
@@ -35,6 +35,7 @@ pref_loss: sigmoid                      # 标准DPO=sigmoid；另可选 orpo / s
 
 ### dataset
 dataset: dpo_zh_demo                    # 自带中文偏好对（sharegpt 格式：conversations + chosen + rejected）
+dataset_dir: train_test/data
 template: qwen3                         # 必须与 SFT / chat 推理一致，否则 chosen/rejected 的 logprob 对不上
 cutoff_len: 2048
 max_samples: 100                        # 跑通用：先采样 100 条。正式训练删此行用全量
@@ -42,7 +43,7 @@ preprocessing_num_workers: 1            # Windows 多进程 map 会卡死，沿�
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3-8B-domain/lora/pt_sft_then_dpo   # 必须换新目录，别覆盖 SFT 产物
+output_dir: train_test/saves/Qwen3-8B-domain/lora/pt_sft_then_dpo   # 必须换新目录，别覆盖 SFT 产物
 logging_steps: 1
 save_steps: 10                          # 跑通阶段存 1 次中途 + 1 次 final
 save_total_limit: 3

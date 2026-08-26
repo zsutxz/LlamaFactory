@@ -1,6 +1,6 @@
 ### Qwen3.5-9B 领域 SFT（think 链）· 定向补强版：与 qwen3_5_9b_domain_pt_then_sft.yaml 逐字同配置，
 ### 唯一变量：dataset 追加 domain_env_qa_t（5 条定向 QA，对应 eval 旧编号 1/20/21/25/32 的知识缺口块
-### 479/531/532/539/551；生成/裁判记录见 data/domain_env_qa_t_manifest.jsonl、_review.md）。
+### 479/531/532/539/551；生成/裁判记录见 train_test/data/domain_env_qa_t_manifest.jsonl、_review.md）。
 ### 动机与口径警示：这 5 块与 eval 题同源——本实验目的是【根因验证】（补知识→败局题应翻正），
 ### 复评分数与 v1/v2/v3 不再同口径；干净基线日后需换新留出题。详见 docs/train_list.md §13.6。
 ### 其余机制说明（方案 B 单 adapter 续训 / qwen3_5 ReasoningTemplate / 环境变量）见原 yaml 注释。
@@ -16,20 +16,21 @@ quantization_method: bnb                      # bnb nf4
 stage: sft                                   # 指令微调（区别于 PT 的纯文本续写：只对 assistant 回复算 loss）
 do_train: true
 finetuning_type: lora
-adapter_name_or_path: saves/Qwen3.5-9B-domain-env/lora/pt_think   # ← resume think 链 PT adapter（量化基座仅此 1 个）
+adapter_name_or_path: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think   # ← resume think 链 PT adapter（量化基座仅此 1 个）
 lora_rank: 8                                 # 与 PT adapter_config 一致（r=8/alpha=16/all），否则 A/B 形状对不上
 lora_alpha: 16
 lora_target: all
 
 ### dataset
 dataset: domain_env_qa_sft,domain_env_qa_t   # 305 条过筛蒸馏 QA + 5 条定向补强 QA（唯一变量）
+dataset_dir: train_test/data
 template: qwen3_5                            # 必须显式指定：Qwen3.5 的 chat_template 带 raise_exception
 cutoff_len: 2048
 preprocessing_num_workers: 1                 # Windows 多进程 map 会卡死，沿用 PT 的单进程
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft_t   # 定向补强版独立目录，勿覆盖原 SFT
+output_dir: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft_t   # 定向补强版独立目录，勿覆盖原 SFT
 logging_steps: 1
 save_steps: 5                                # 约 120 步总量（40×3），每 5 步存档、limit 3 只留最近
 save_total_limit: 3

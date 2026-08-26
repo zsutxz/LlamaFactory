@@ -22,7 +22,7 @@ quantization_method: bnb                      # bnb nf4
 stage: dpo                                   # 偏好优化：拉大 chosen/rejected 的 logprob 差
 do_train: true
 finetuning_type: lora
-adapter_name_or_path: saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # ← resume think 链 SFT adapter（前置：think SFT 已训完）
+adapter_name_or_path: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # ← resume think 链 SFT adapter（前置：think SFT 已训完）
 # 量化基座上切勿加 create_new_adapter: true（Cannot create new adapter upon a quantized model）
 lora_rank: 8                                 # 与 PT/SFT 一致，否则 A/B 形状对不上
 lora_alpha: 16
@@ -32,13 +32,14 @@ pref_loss: sigmoid                           # 标准DPO=sigmoid；orpo/simpo �
 
 ### dataset
 dataset: domain_env_pref                     # 领域偏好对（alpaca ranking：instruction/input/chosen/rejected）
+dataset_dir: train_test/data
 template: qwen3_5                            # 必须与 SFT/chat 推理一致（ReasoningTemplate，勿改 qwen3_5_nothink）
 cutoff_len: 2048
 preprocessing_num_workers: 1                 # Windows 多进程 map 会卡死，沿用单进程
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_then_dpo   # think 链产物独立，勿覆盖 Base 链 pt_sft_then_dpo
+output_dir: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_then_dpo   # think 链产物独立，勿覆盖 Base 链 pt_sft_then_dpo
 logging_steps: 1
 save_steps: 30                               # 213条×2epoch≈53步总量，中途存 1 次
 save_total_limit: 3

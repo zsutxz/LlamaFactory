@@ -6,7 +6,7 @@
 ### 数据：domain_env_pref_full = v1 213 + v2 定向 62 = 275 条（无中生有 38/数值篡改 12/主体 12 追加）
 ### 基线：从 pt_think_then_sft 重新续训（同 v1 起点，非在 v1 DPO 产物上叠加）
 ### 环境变量(必需)：LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1
-### 启动：llamafactory-cli train examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo_v2.yaml
+### 启动：llamafactory-cli train train_test/examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo_v2.yaml
 
 ### model
 model_name_or_path: model/Qwen3.5-9B          # think/instruct 版（非 Base），与 pt_think_then_sft 的 adapter_config base 一致
@@ -18,7 +18,7 @@ quantization_method: bnb                      # bnb nf4
 stage: dpo
 do_train: true
 finetuning_type: lora
-adapter_name_or_path: saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # ← 同 v1：SFT 基线重训（勿指向 v1 DPO 产物）
+adapter_name_or_path: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # ← 同 v1：SFT 基线重训（勿指向 v1 DPO 产物）
 # 量化基座上切勿加 create_new_adapter: true（Cannot create new adapter upon a quantized model）
 lora_rank: 8                                 # 与 PT/SFT 一致，否则 A/B 形状对不上
 lora_alpha: 16
@@ -28,13 +28,14 @@ pref_loss: sigmoid                           # ref=禁用 adapter 的量化基�
 
 ### dataset
 dataset: domain_env_pref_full                # v1 213 + v2 定向 62 = 275 条
+dataset_dir: train_test/data
 template: qwen3_5                            # 与 SFT/chat 推理一致（ReasoningTemplate，勿改 qwen3_5_nothink）
 cutoff_len: 2048
 preprocessing_num_workers: 1                 # Windows 多进程 map 会卡死，沿用单进程
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_then_dpo_v2   # 独立目录，勿覆盖 v1
+output_dir: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_then_dpo_v2   # 独立目录，勿覆盖 v1
 logging_steps: 1
 save_steps: 30                               # 275条×2epoch≈69步总量，中途存 2 次
 save_total_limit: 3

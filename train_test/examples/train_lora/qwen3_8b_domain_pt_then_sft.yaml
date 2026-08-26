@@ -17,7 +17,7 @@ quantization_method: bnb                # bnb nf4
 stage: sft                             # 指令微调（区别于 PT 的纯文本续写：只对 assistant 回复算 loss）
 do_train: true
 finetuning_type: lora
-adapter_name_or_path: saves/Qwen3-8B-domain/lora/pt   # ← resume PT adapter（量化基座仅此 1 个）
+adapter_name_or_path: train_test/saves/Qwen3-8B-domain/lora/pt   # ← resume PT adapter（量化基座仅此 1 个）
 # 量化基座上切勿加 create_new_adapter: true（会报错 Cannot create new adapter upon a quantized model）
 lora_rank: 8                           # 与 PT 一致，否则 A/B 形状对不上
 lora_alpha: 16
@@ -25,6 +25,7 @@ lora_target: all
 
 ### dataset
 dataset: alpaca_zh_demo                # 自带 1000 条中文指令（alpaca 格式）
+dataset_dir: train_test/data
 template: qwen3                        # SFT 必须设 template，且与 chat 推理一致（见 examples/inference/qwen3_8b_domain_chat.yaml）
 cutoff_len: 2048
 max_samples: 100                       # 跑通用：先采样 100 条（≈13 步/epoch）。正式训练删此行用全量 1000 条
@@ -32,7 +33,7 @@ preprocessing_num_workers: 1           # Windows 多进程 map 会卡死，沿�
 dataloader_num_workers: 0
 
 ### output
-output_dir: saves/Qwen3-8B-domain/lora/pt_then_sft   # 必须换新目录，别覆盖 PT 产物
+output_dir: train_test/saves/Qwen3-8B-domain/lora/pt_then_sft   # 必须换新目录，别覆盖 PT 产物
 logging_steps: 1
 save_steps: 10                         # 13 步/epoch，存 1 次中途 + 1 次 final
 save_total_limit: 3

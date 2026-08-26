@@ -811,5 +811,15 @@
   },
   "domain_env_qa_t": {
     "file_name": "domain_env_qa_t_sft.jsonl"
+  },
+  "domain_env_pref_v4": {
+    "file_name": "domain_env_pref_v4.jsonl",
+    "ranking": true,
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "chosen": "chosen",
+      "rejected": "rejected"
+    }
   }
 }

@@ -201,6 +201,9 @@ def main():
     ap.add_argument("--min-block-chars", type=int, default=400, help="过短块不入选(默认 400 字符)")
     ap.add_argument("--force", action="store_true", help="丢弃已有 manifest 重新生成")
     ap.add_argument("--blocks", default="", help="定向出题：逗号分隔的语料块索引(如 '479,531')，绕过随机梯子，全部记 train")
+    ap.add_argument("--eval-blocks", default="", help="定向出 eval 题：逗号分隔的语料块索引，全部记 eval(须自行保证与既有 train 块不相交)")
+    ap.add_argument("--again", action="store_true", help="配合 --blocks/--eval-blocks：同块追加一道新题(跳过已生成检查，用于同块多角度出题)")
+    ap.add_argument("--focus", default="", help="附加出题聚焦指令(追加到出题要求之后，如聚焦罚则/审批主体)")
     args = ap.parse_args()
 
     api_key = load_env(ENV_FILE).get(args.api_key_env, "")
@@ -221,14 +224,19 @@ def main():
     out_manifest = os.path.join(out_dir, f"{args.out_prefix}_manifest.jsonl")
 
     blocks = load_blocks(args.src)
-    if args.blocks:
-        wanted = [int(x) for x in args.blocks.split(",") if x.strip()]
+    if args.blocks or args.eval_blocks:
+        src_arg = args.blocks or args.eval_blocks
+        wanted = [int(x) for x in src_arg.split(",") if x.strip()]
         bad = [i for i in wanted if not (0 <= i < len(blocks))]
         if bad:
-            print(f"[exit] --blocks 越界: {bad}（语料共 {len(blocks)} 块）")
+            print(f"[exit] --blocks/--eval-blocks 越界: {bad}（语料共 {len(blocks)} 块）")
             return
-        train_idx, eval_idx = wanted, []
-        print(f"[blocks] 定向出题 {len(wanted)} 块: {wanted}（注意：绕过随机梯子，不保证与既有 eval 块不相交）")
+        if args.blocks:
+            train_idx, eval_idx = wanted, []
+            print(f"[blocks] 定向出题 {len(wanted)} 块: {wanted}（注意：绕过随机梯子，不保证与既有 eval 块不相交）")
+        else:
+            train_idx, eval_idx = [], wanted
+            print(f"[eval-blocks] 定向出 eval 题 {len(wanted)} 块（注意：须自行保证与既有 train 块不相交）")
     else:
         candidates = [i for i, b in enumerate(blocks) if len(b) >= args.min_block_chars]
         ladder_size = max(LADDER_SIZE, args.num + args.eval_num)
@@ -249,11 +257,13 @@ def main():
     for n, (idx, split) in enumerate(targets, 1):
         block = blocks[idx]
         digest = hashlib.sha1(block.encode("utf-8")).hexdigest()
-        if digest in done:
+        if digest in done and not args.again:
             print(f"[{n}/{len(targets)}] block_idx={idx} 已生成，跳过")
             continue
 
         user_content = USER_TEMPLATE.format(block=block)
+        if args.focus:
+            user_content += f"\n\n【本次聚焦】\n{args.focus}"
         raw, usage = call_llm(client, args.model, user_content, args.retries, args.sleep)
         time.sleep(args.sleep)
         if raw is None:

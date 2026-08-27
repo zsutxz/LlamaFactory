@@ -81,6 +81,8 @@ COMPARE_PAIRS = {
     # on-policy 负样本筛选：reference(教师答案) vs answer_sft(模型自答)，
     # prefer=ref 或分差大的行 = 模型真实失败样本 → 偏好对 (chosen=reference, rejected=answer_sft)
     "ref-model": ("reference", "answer_sft", "ref", "model"),
+    # 通用 A/B 槽（如 SFT 基线 vs SFT_v5 扩量版，同阶段两模型对比）
+    "a-b": ("answer_a", "answer_b", "sft", "sft_v5"),
 }
 
 
@@ -382,6 +384,11 @@ def main():
             args.compare = os.path.join(DATA_DIR, "domain_env_onpolicy.jsonl")
         if args.compare_report == os.path.join(DATA_DIR, "domain_env_qa_compare_report.md"):
             args.compare_report = os.path.join(DATA_DIR, "domain_env_onpolicy_report.md")
+    elif args.pair == "a-b":
+        if args.compare == os.path.join(DATA_DIR, "domain_env_qa_compare.jsonl"):
+            args.compare = os.path.join(DATA_DIR, "domain_env_qa_compare_v5.jsonl")
+        if args.compare_report == os.path.join(DATA_DIR, "domain_env_qa_compare_report.md"):
+            args.compare_report = os.path.join(DATA_DIR, "domain_env_qa_compare_v5_report.md")
 
     if args.mode == "init-compare":  # 纯本地，不需要钥匙
         mode_init_compare(args)

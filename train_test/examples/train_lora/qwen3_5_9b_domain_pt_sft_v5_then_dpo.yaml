@@ -1,0 +1,58 @@
+### Qwen3.5-9B 领域 DPO（think 链）· v5 基线版：知识到位基线上的 DPO 重启
+### 与 v4 的差异（超参逐字相同：sigmoid/beta0.1/lr5e-6/2ep/量化与 PT/SFT 全同）：
+###   1. 基线：pt_think_then_sft_v5（365 条扩量池重训，106 题三轮多数决净 +11，
+###      单侧 p=0.08——项目首个方向一致的净正 SFT 增益，见 domain_env_qa_compare_v5_report_majority.md）
+###   2. 数据：domain_env_pref_v5 = 291 对（v4 的 215 对原样复用 + 55 条新 QA 的对 +
+###      v4 当年劣化不合格的 95 种子复检过 76——DeepSeek 非确定性二跑）
+###      ——回应 §13.7 开放问题：知识更到位的基线上 DPO 能否拿到 v4（净-2）拿不到的增益
+###   3. 注意 §13.7 观察：DPO 曾冲掉定向 SFT 教的事实（4 条存留 2）——v5 池含 5 定向 +
+###      2 对比 + 57 罚则 QA，训后需抽查这些事实是否存留
+### 环境变量(必需)：LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1
+### 启动：llamafactory-cli train train_test/examples/train_lora/qwen3_5_9b_domain_pt_sft_v5_then_dpo.yaml
+### 提速提示：DPO 双模型(policy+ref)在 16G 卡上贴显存上限跑，先关 Unity/浏览器等可省一半以上时间
+###          （v4 run2 在占用环境下 9h43m，run1 干净环境 2h24m）
+
+### model
+model_name_or_path: model/Qwen3.5-9B          # think/instruct 版（非 Base），与 pt_think_then_sft_v5 的 adapter_config base 一致
+trust_remote_code: true
+quantization_bit: 4                           # 必须与 PT/SFT 完全一致，否则 adapter 挂不上量化基座
+quantization_method: bnb                      # bnb nf4
+
+### method
+stage: dpo
+do_train: true
+finetuning_type: lora
+adapter_name_or_path: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft_v5   # ← v5 扩量 SFT（净+11 基线）
+lora_rank: 8                                 # 与 PT/SFT 一致，否则 A/B 形状对不上
+lora_alpha: 16
+lora_target: all
+pref_beta: 0.1                               # DPO 偏好强度，官方默认 0.1（同 v1/v4）
+pref_loss: sigmoid                           # v1/v4 同款（唯一净正配置；v3 的 IPO 已实测无效）
+
+### dataset
+dataset: domain_env_pref_v5                  # 291 对（215 v4 复用 + 76 新/复检）
+dataset_dir: train_test/data
+template: qwen3_5                            # 必须与 SFT/chat 推理一致（ReasoningTemplate，勿改 qwen3_5_nothink）
+cutoff_len: 2048
+preprocessing_num_workers: 1                 # Windows 多进程 map 会卡死，沿用单进程
+dataloader_num_workers: 0
+
+### output
+output_dir: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_v5_then_dpo   # 独立目录
+logging_steps: 1
+save_steps: 40                               # 291 对×2epoch≈73 步总量
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: none
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8               # 有效 batch = 8
+learning_rate: 5.0e-6                        # DPO 比 SFT(5e-5) 小一档，防把 SFT 学到的能力冲掉（同 v1/v4）
+num_train_epochs: 2.0                        # 同 v1/v4
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000

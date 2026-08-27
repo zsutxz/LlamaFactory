@@ -22,7 +22,7 @@ DATA_DIR = os.path.join(REPO, "data")
 def main():
     ap = argparse.ArgumentParser(description="把对比骨架问题逐条发给本地 api 服务并回填答案")
     ap.add_argument("--compare", default=os.path.join(DATA_DIR, "domain_env_qa_compare.jsonl"), help="对比骨架文件")
-    ap.add_argument("--field", choices=["answer_pt", "answer_sft", "answer_dpo"], required=True, help="本轮回填哪个字段")
+    ap.add_argument("--field", choices=["answer_pt", "answer_sft", "answer_dpo", "answer_a", "answer_b"], required=True, help="本轮回填哪个字段")
     ap.add_argument("--base-url", default="http://127.0.0.1:8000/v1", help="本地 api 服务地址")
     ap.add_argument("--api-key", default="0", help="API_KEY(本地服务未设鉴权时随便填)")
     ap.add_argument("--temperature", type=float, default=0.3, help="生成温度(两个 adapter 保持一致才公平)")

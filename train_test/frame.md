@@ -127,7 +127,7 @@ train/
 
 ### 4.2 训练配置：examples/*.yaml
 
-**以LoRA训练为例** (`examples/train_lora/llama3_lora_sft.yaml`):
+**以LoRA训练为例** (`examples/train_lora/qwen3_lora_sft.yaml`，官方现存示例):
 
 ```yaml
 # 模型配置

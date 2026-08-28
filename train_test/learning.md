@@ -2,7 +2,7 @@
 
 > 本文档记录在本机（Windows + conda）上手使用 LLaMA-Factory 的**完整实操流程**。
 > 框架原理（目录结构 / 核心模块 / 配置 / 概念 / 代码位置）见 [frame.md](./frame.md)。
-> 领域 PT（4B/8B/9B）与蒸馏闭环的完整实测记录见 [train_list.md](./train_list.md)。
+> 领域全链（4B/8B/9B：PT → 蒸馏闭环 → 9B SFT 扩量与 DPO 终验）的完整实测记录见 [train_list.md](./train_list.md)。
 
 ---
 
@@ -17,7 +17,7 @@
 | 0 | 安装与环境 | `pip install -e .` | — | ✅ |
 | 1 | 预训练 PT | `stage: pt` | 纯文本 | ✅ 已实测 |
 | 2 | 监督微调 SFT | `stage: sft` | 指令-回答对 | ✅ 已实测 |
-| 3 | 偏好对齐 DPO | `stage: dpo` | chosen/rejected 对 | ✅ 已实测（五轮无净增益，已封存；见 §8、train_list §13） |
+| 3 | 偏好对齐 DPO | `stage: dpo` | chosen/rejected 对 | ✅ 已实测（无净增益，已封存；见 §8、train_list §13） |
 | 4 | 推理 | `llamafactory-cli chat` | — | ✅ 已实测 |
 | 5 | 蒸馏 | **LF 无独立阶段** = 强模型生成数据→SFT | teacher 生成 | ✅ 已实测 |
 | 6 | 评估 | `train` + `do_predict:true` | 同训练集 | ✅ 已实测 |
@@ -133,7 +133,7 @@ huggingface-cli download Qwen/Qwen3-1.7B --local-dir model/Qwen3-1.7B
 ## 1. 预训练 PT（继续预训练 / 知识注入）
 
 > ✅ 已实测（Qwen3-4B + 领域论文/文档语料，45 步、5 epochs 跑通，详见 1.5）。
-> 配置蓝本：`examples/train_lora/qwen3_4b_domain_pretrain.yaml`（官方示例 `examples/train_lora/qwen3_lora_pretrain.yaml`）。
+> 配置蓝本：4B 专属 yaml 已删（git 034e0016 可查），现存同款见 `train_test/examples/train_lora/qwen3_8b_domain_pretrain.yaml`（官方示例 `examples/train_lora/qwen3_lora_pretrain.yaml`）。
 
 **用途**：把**领域纯文本**（非问答对）灌进模型，做知识注入 / 领域适配。学的是「知识 + 语言风格」。
 
@@ -216,7 +216,7 @@ llamafactory-cli train examples/train_lora/qwen3_pt.yaml   # 你的配置路径
 
 ## 2. 监督微调 SFT（核心）
 
-> ✅ 已实测（Qwen3-4B-Thinking，6554 步、1.0 epoch 跑通）。配置：`examples/train_lora/qwen3_4b_thinking_lora_sft.yaml`。
+> ✅ 已实测（Qwen3-4B-Thinking，6554 步、1.0 epoch 跑通；该早期配置 yaml 已删，git ad1ba1b9 可查）。9B 领域 SFT 现行配置：`train_test/examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml`。
 
 **用途**：用「指令-回答」对训练，让模型学会按特定格式/风格回答。最常用的微调阶段。
 
@@ -282,7 +282,7 @@ llamafactory-cli train examples/train_lora/qwen3_4b_thinking_lora_sft.yaml
 
 ## 3. 偏好对齐 DPO
 
-> ✅ 已实测（9B 五轮实验，均无净增益——结论与方法论见 §8，终验见 [train_list.md](./train_list.md) §13；v1~v4 记录已归档 `E:/AI/LLaMA-Factory_archive_20260828/docs/`）。配置蓝本：`examples/train_lora/qwen3_lora_dpo.yaml`。
+> ✅ 已实测（9B 实验无净增益，已封存——结论与方法论见 §8，终验见 [train_list.md](./train_list.md) §13）。配置蓝本：`examples/train_lora/qwen3_lora_dpo.yaml`。
 
 **用途**：用「同一问题的好回答 vs 坏回答」对比训练，调模型的回答**风格 / 偏好**（更无害、更符合人类偏好）。**不做新知识注入**——前提是 SFT 已把能力训好。变体：KTO（`stage: kto`，只需好/坏标签不成对）。
 
@@ -340,7 +340,7 @@ llamafactory-cli train examples/train_lora/qwen3_dpo.yaml
 
 ## 4. 推理（加载训练结果）
 
-> ✅ 已实测。配置：`examples/inference/qwen3_lora_chat.yaml`、`examples/inference/qwen3_merged_chat.yaml`。
+> ✅ 已实测。配置：`train_test/examples/inference/qwen3_lora_chat.yaml`、`train_test/examples/inference/qwen3_merged_chat.yaml`。
 
 两种加载方式：
 
@@ -426,7 +426,7 @@ LF 的 `stage` 只有 `pt / sft / rm / ppo / dpo / kto`，**没有 `distill`**�
 
 ## 6. 评估（生成式 NLG 评估）
 
-> ✅ 已实测。配置：`examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml`。
+> ✅ 已实测。配置：`train_test/examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml`。
 
 **用途**：让模型在数据集上实际生成回答，对比参考答案，算 BLEU/ROUGE。比训练 loss 更能反映真实生成质量。
 
@@ -448,7 +448,7 @@ template: qwen3
 llamafactory-cli train examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml
 ```
 
-### 6.3 产出（`saves/Qwen3-4B-Thinking/lora/predict/`）
+### 6.3 产出（`saves/Qwen3-4B-Thinking/lora/predict/`，早期产物已清理，字段说明仍适用）
 
 - `generated_predictions.jsonl` —— 每行 `label` vs `predict`，**人眼对比最直观**，比 BLEU 更有参考价值。
 - `predict_results.json` —— BLEU/ROUGE 指标（中文场景分值普遍偏低，别被低分吓到）。
@@ -465,7 +465,7 @@ llamafactory-cli train examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml
 
 ## 7. 导出（合并 LoRA → 完整模型）
 
-> ✅ 已实测。配置：`examples/merge_lora/qwen3_4b_thinking_export.yaml`。
+> ✅ 已实测。配置：`train_test/examples/merge_lora/qwen3_4b_thinking_export.yaml`。
 
 **用途**：把 LoRA adapter 烧进基座，导出**自包含的完整模型**（脱离基座单独部署）。
 
@@ -488,7 +488,7 @@ export_legacy_format: false             # false=safetensors(推荐)；true=pytor
 llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
 ```
 
-导出到 `saves/Qwen3-4B-Thinking/merged/`（Qwen3-4B bf16 约 8GB，按 `export_size: 5` 分 2 个 safetensors 分片）。合并后可直接用 vLLM / Ollama（目录里有 `Modelfile`）/ transformers 加载部署，不必再走 LF。
+导出到 `saves/Qwen3-4B-Thinking/merged/`（早期产物已清理；Qwen3-4B bf16 约 8GB，按 `export_size: 5` 分 2 个 safetensors 分片）。合并后可直接用 vLLM / Ollama（目录里有 `Modelfile`）/ transformers 加载部署，不必再走 LF。
 
 ### 7.3 实测坑
 
@@ -501,20 +501,21 @@ llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
 
 ---
 
-## 8. 实验方法论：评测口径与迭代纪律（DPO 三连负复盘，2026-08-26）
+## 8. 实验方法论：评测口径与迭代纪律（DPO 负结果复盘）
 
-> 本节是 9B think 链 DPO（v1/v2/v3）三连负 + 定向补强验证（4/5 翻正）的**方法论提炼**，
-> 完整实测与数据见 [train_list.md](./train_list.md) §13（终验）；v1~v4 四轮与定向补强记录已归档 `E:/AI/LLaMA-Factory_archive_20260828/docs/train_list_sft_dpo_v1-v4.md`。适用于任何"改数据/改超参→评测→再迭代"的实验循环。
+> 本节是 9B think 链 DPO 负结果与定向补强验证的**方法论提炼**，完整实测见
+> [train_list.md](./train_list.md) §13（终验）；早期迭代记录已归档
+> `E:/AI/LLaMA-Factory_archive_20260828/docs/`。适用于任何"改数据/改超参→评测→再迭代"的实验循环。
 
 ### 8.1 六条纪律（按踩坑代价排序）
 
 1. **先修尺子再赛跑**：建 eval 集先做可答性筛查——"这题在语料量级下可能答对吗？"
    论文表格级细节题（拟合次数/特征编号）是**合理不可答**，永远双低分，会系统性扭曲
-   胜负结论（本轮 3 道此类题曾把 v1 的净胜 +5 扭成"疑似负"）。
+   胜负结论（实测曾因 3 道此类题把净胜 +5 扭成"疑似负"）。
 2. **单轮 LLM 裁判不可信**：temperature=1 下同一对模型三轮可裁出 5/7/10 胜——A/B 结论
    至少三轮取逐题多数决（成本 ~3×，但省掉整轮误判）。
-3. **"修复"当假设检验做，不当改进做**：v2/v3 动机都正确（反编造/防过拟合），都把正向
-   基线修成净负 9。每次只动一个变量（数据组成**或** loss），同口径复评，改前存档可回退。
+3. **"修复"当假设检验做，不当改进做**：动机正确的修复（反编造/防过拟合）也可能把
+   正向基线修成净负（实测 -9）。每次只动一个变量（数据组成**或** loss），同口径复评，改前存档可回退。
 4. **偏好层修不了不知道的事**：DPO 三连负的根因是知识缺口。任何"补数据"动作前先 grep
    语料查覆盖（2 分钟）——本轮 5 类"缺失"条款实际**全在语料里**，缺的是单次曝光的记忆，
    走定向 QA 强化即可，采集是最贵的修复路径。
@@ -524,16 +525,13 @@ llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
 6. **负结果也是产出，前提是可比**：同一 eval 集、同一裁判、同一归并规则、每版产物独立
    留存。任何一环混口径，负结果就只是废数据。
 
-### 8.2 小数据量级的链路价值排序（含 v4 验证）
+### 8.2 小数据量级的链路价值排序
 
 **数据覆盖 > PT > SFT >> DPO**（300 条 QA 量级实测）。DPO 起作用的前置是知识已到位；
 数据没覆盖到的条款细节，模型"不懂就编"，偏好优化只会改变编造的风格。
-> 2026-08-26 v4 复核：按六条纪律重试（v1 配方 + SFT_t 知识到位基线）——v2/v3 的净 -9
-> 回归被修复到净 -2（打平），教训有效；但 DPO 仍无净增益（v1 +5 与 v4 -2 均在不显著带内），
-> 且会部分冲掉定向 SFT 教的事实（4 条存留 2）。排序结论维持不变。详见归档 train_list §13.7。
-> 2026-08-28 第五轮终验：知识到位基线（净 +11 的扩量 SFT）上重启 DPO——净 -2，与 v4 分毫不差，
-> 且又冲掉近半 SFT 优势题（31 冲 15）。**五轮收官（+5/-9/负/-2/-2），DPO 路线封存**；
-> 增益路径回到 SFT 扩池（扩量实测净 +11，见 train_list §13.8/§15）。
+> 2026-08-28 终验：知识到位基线（净 +11 的扩量 SFT）上重启 DPO——净 -2，又冲掉近半
+> SFT 优势题（31 冲 15）。**DPO 路线封存**；增益路径回到 SFT 扩池（实测净 +11，
+> 见 train_list §13/§14，早期迭代记录已归档）。
 
 **数据覆盖 > PT > SFT >> DPO**（300 条 QA 量级实测）。DPO 起作用的前置是知识已到位；
 数据没覆盖到的条款细节，模型"不懂就编"，偏好优化只会改变编造的风格。
@@ -541,7 +539,7 @@ llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
 ### 8.3 如果重来一遍
 
 1. eval 骨架先过可答性筛查，全程三轮多数决；
-2. v1 出结果先做缺口诊断（grep + 败局题裁判评语归类），大概率直接跳过 v2/v3；
+2. 出负结果先做缺口诊断（grep + 败局题裁判评语归类），少走两轮弯路；
 3. "终局结论"别在第二次实验后就写死——本轮它被口径复算推翻过一次。
 
 ---

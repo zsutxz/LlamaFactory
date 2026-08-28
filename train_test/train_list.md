@@ -1,7 +1,8 @@
 # 领域模型实操记录：PT（4B/8B/9B）→ 蒸馏闭环
 
-> 日期：2026-08-03 ~ 2026-08-08（4B：08-03~04；8B QLoRA：08-07~08）；2026-08-19（蒸馏闭环）
-> 目标：把本机「专业文档 + 论文」语料灌进 Qwen3，跑通「语料构建 → 继续预训练(PT) → 效果评估」全流程；先 4B 起步，再用 4-bit QLoRA 把规格顶到 8B，对比代价与收益；后扩展 9B（环保语料）补上 SFT 环，跑通蒸馏闭环（§12）。
+> 日期：2026-08-03 ~ 08-28（4B/8B PT：08-03~08；9B 蒸馏闭环：08-19；9B think 链 SFT/DPO 迭代：08-20~08-28）
+> 目标：把本机「专业文档 + 论文」语料灌进 Qwen3，跑通「语料构建 → PT → SFT → DPO → 评测」全流程；先 4B 起步，4-bit QLoRA 顶到 8B，后以 9B（环保语料 think 链）为主线完成蒸馏闭环与 SFT/DPO 迭代。
+> 现状（2026-08-28 清理后）：主目录只保留最终链 `pt_think → pt_think_then_sft（365 池，净+11）→ pt_think_sft_then_dpo（DPO 已封存仅留对照）`；SFT/DPO v1~v4 旧实验全量归档于 `E:/AI/LLaMA-Factory_archive_20260828/`（旧 §13.1-13.7/§14 实测记录随之归档，归档文档保留原编号）。
 > 导航：全流程上手见 [learning.md](./learning.md)；框架原理见 [frame.md](./frame.md)。
 
 ---
@@ -33,6 +34,7 @@
   1. **4-bit 量化是消费级显卡上「把模型规格顶上去」的关键杠杆**——8B QLoRA 比 4B bf16 既更强（PPL 更低）又更省显存，代价是慢约 35%。
   2. **PT 灌的是「知识 + 语言风格」，不是问答能力**——续写对照显示 PT 改善的是领域文本预测分布（PPL 可量化），不显著改变问答行为；要「能回答领域问题」，链路是 **PT → SFT**。
 - 踩坑 6 个（§5）：HF 缓存写不进、Windows 多进程、bnb/Blackwell、chat 不收 train yaml、chat 覆盖语法、cal_ppl 不量化。
+- **9B think 链终局（§12~§14）**：蒸馏闭环跑通后，SFT 扩量到 365 条即拿到项目首个方向一致净增益（106 题三轮多数决 **净 +11**，§14）；DPO 终验净 -2 且冲刷近半 SFT 优势题，**路线封存**（§13）。链路价值排序：数据覆盖 > PT > SFT >> DPO。
 
 ---
 
@@ -95,7 +97,7 @@ PDF(pymupdf) / md / html(bs4)  → 清洗 → 段落切块(~1800字符) → 哈�
 
 两份 yaml，**同一 PT 配方**（`stage: pt` / `lora rank8 lora_target: all` / `cutoff_len: 2048` / `preprocessing_num_workers: 1` / batch 1×累积 8 / `lr 1e-4` cosine warmup 0.1 / `5 epochs` / `eval_steps: 10`），差别在模型与量化：
 
-| 分块 | 4B（`qwen3_4b_domain_pretrain.yaml`） | 8B（`qwen3_8b_domain_pretrain.yaml`） |
+| 分块 | 4B（`qwen3_4b_domain_pretrain.yaml`，已删、git 034e0016 可查） | 8B（`qwen3_8b_domain_pretrain.yaml`，在 `train_test/examples/`） |
 |------|----------------------------------------|----------------------------------------|
 | model | `model/Qwen3-4B` | `model/Qwen3-8B` + **`quantization_bit: 4` / `method: bnb`** |
 | 量化 | 无（bf16 放得下） | 必须 4-bit（bf16 15.5GB 放不进 16GB） |
@@ -235,7 +237,7 @@ prefix: "Multimodal memory" is a crucial concept that describes how an agent han
 > PowerShell 流程，逐步勾选；★ 为必查检查点。以 **8B** 为准，跑 4B 只需把 yaml 换成 `qwen3_4b_domain_pretrain.yaml`、去掉量化相关项。
 
 **0. 前置确认**（已就绪，可选验证）
-- [ ] 语料 `data/domain_papers.jsonl` / `_eval.jsonl` 在；训练 yaml `examples/train_lora/qwen3_{4,8}b_domain_pretrain.yaml`、续写 yaml `examples/inference/qwen3_8b_domain_chat.yaml` 在；`data/dataset_info.json` 含 `domain_papers` / `domain_papers_eval`
+- [ ] 语料 `train_test/data/domain_papers.jsonl` / `_eval.jsonl` 在；训练 yaml `train_test/examples/train_lora/qwen3_{4,8}b_domain_pretrain.yaml`、续写 yaml `examples/inference/qwen3_8b_domain_chat.yaml` 在；`data/dataset_info.json` 含 `domain_papers` / `domain_papers_eval`
 - [ ] 换语料才重跑 `python scripts\data\build_domain_corpus.py`（需带 pymupdf 的环境）
 
 **1. 预检**（2 分钟，§5 坑 1/3）
@@ -278,28 +280,30 @@ prefix: "Multimodal memory" is a crucial concept that describes how an agent han
 
 ---
 
-## 11. 产物文件清单
+## 11. 产物文件清单（2026-08-28 对齐现状）
+
+**现存（9B think 链 + 共用资产，均在 `train_test/` 下）**：
 
 | 文件 | 作用 |
 |------|------|
 | `.claude/skills/public-data-pipeline/scripts/build_domain_corpus.py` | 语料构建脚本（PDF/md/html → jsonl 训练/验证集 + 统计） |
-| `data/domain_papers.jsonl` / `domain_papers_eval.jsonl` | 训练 / 验证数据（两模型共用） |
-| `data/domain_papers_stats.txt` | 语料统计（文档数 / 切块数 / 字符数） |
-| `data/dataset_info.json`（新增条目） | 数据集注册（`domain_papers` / `domain_papers_eval`） |
-| `examples/train_lora/qwen3_4b_domain_pretrain.yaml` | 4B 训练配置（bf16 LoRA） |
-| `examples/train_lora/qwen3_8b_domain_pretrain.yaml` | 8B 训练配置（4-bit QLoRA） |
-| `examples/train_lora/qwen3_5_9b_domain_pretrain.yaml` | 9B 训练配置（4-bit QLoRA，Qwen3.5-9B-Base + 环保语料 domain_env） |
-| `examples/inference/qwen3_8b_domain_chat.yaml` | 续写/推理配置（仅模型键，§5 坑 4） |
-| `saves/Qwen3-4B-domain/lora/pt` | 4B 训练产物（adapter 66MB + checkpoint-30/40/45 + 曲线 + 指标） |
-| `saves/Qwen3-8B-domain/lora/pt` | 8B 训练产物（adapter 87MB + checkpoint-30/40/45 + 曲线 + 指标） |
 | `.claude/skills/public-data-pipeline/scripts/generate_domain_qa.py` | 蒸馏造数脚本（DeepSeek 出题 + quote 机械校验 + manifest 幂等，§12） |
-| `.claude/skills/public-data-pipeline/scripts/judge_domain_qa.py` | 裁判脚本（Kimi 三维评分三档分流 / PT vs SFT 对比，§12） |
+| `.claude/skills/public-data-pipeline/scripts/judge_domain_qa.py` | 裁判脚本（三维评分三档分流 / 对比评分 / `--pair sft-dpo`，§12） |
 | `.claude/skills/public-data-pipeline/scripts/ask_compare.py` | 留出题自动问答回填（配合本地 api 服务，§12 坑 7） |
-| `data/domain_env_qa{,_eval,_sft,_manifest,_judged,_compare}.jsonl` | 蒸馏数据全家桶（生成 → 过筛 → 对比；均不入库） |
-| `data/domain_env_qa_review.md` / `_compare_report.md` | 裁判报告（兼人工抽检文档）/ PT vs SFT 对比报告 |
-| `examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml` | 9B PT→SFT 续训配置（蒸馏 QA，§12） |
-| `examples/inference/qwen3_5_9b_domain_chat.yaml` | 9B 推理配置（仅模型键；key=value 切 pt / pt_then_sft adapter） |
-| `saves/Qwen3.5-9B-domain-env/lora/pt_then_sft` | 9B PT→SFT 训练产物（§12） |
+| `data/domain_papers.jsonl` / `domain_papers_eval.jsonl` | 4B/8B 训练/验证语料（两模型共用） |
+| `data/domain_env.jsonl` / `domain_env_eval.jsonl` | 9B PT 训练/验证语料（think 链） |
+| `data/domain_env_qa.jsonl` / `_judged` / `_manifest` | 出题上游（生成 → 过筛索引，未来扩池去重用） |
+| `data/domain_env_qa_sft.jsonl`（365 条）+ `domain_env_pref.jsonl`（291 对） | SFT 扩量池 / DPO 偏好对（注册名 `domain_env_qa_sft` / `domain_env_pref`） |
+| `data/domain_env_qa_compare.jsonl`（106 题骨架）及 `_r1~r3` / `_report_*` | 两轮 A/B 评测骨架、回填与三轮多数决报告（SFT 扩量版 / SFT+DPO 版各一套，文件名带 `_dpo` 的为后者） |
+| `examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml` | 9B PT→SFT 配置（365 池，§14） |
+| `examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo.yaml` | 9B SFT→DPO 配置（§13，已封存仅留对照） |
+| `examples/inference/qwen3_5_9b_think_domain_chat.yaml` | 9B think 链推理配置（默认 SFT；key=value 切 PT/DPO adapter） |
+| `saves/Qwen3.5-9B-domain-env/lora/` 下 `pt_think` / `pt_think_then_sft` / `pt_think_sft_then_dpo` | think 链 PT → SFT → DPO 三个 adapter（`pt/` 为 no-think 链 PT 基线） |
+| `run_eval_ab.py` / `run_eval_dpo_ab.py` + `run_dpo.bat` / `run_eval_dpo.bat` | A/B 评测编排（历史首轮 / 现役 SFT vs SFT+DPO）与分离进程启动器 |
+
+**已归档（`E:/AI/LLaMA-Factory_archive_20260828/`，2026-08-28 起）**：SFT/DPO v1~v4 全部 checkpoint（10 项 ~7.3GB）、旧版 305 池与 pref v1~v4 数据、旧对比报告、旧 yaml 9 个、§13.1-13.7/§14 记录（`docs/train_list_sft_dpo_v1-v4.md`）。
+
+**已不在本机（git 历史可查）**：4B/8B 训练产物（`saves/Qwen3-4B/8B-domain/`）、`qwen3_4b_domain_pretrain.yaml`（提交 034e0016）、4B-Thinking SFT 系列资产。
 
 ---
 
@@ -319,7 +323,7 @@ domain_env.jsonl 等距抽 60 块（固定梯子，冒烟=正式前缀）
   → Kimi 三维评分（grounding/terminology/value 各 1~5）
   → 三档分流：pass（≥4.0 且三维各 ≥3）/ review（人工复核）/ drop（均分 <3 或 grounding ≤2）
   → 人工抽检报告，review 条目合格用 --promote 改判
-  → domain_env_qa_sft.jsonl 注册为 alpaca 数据集
+  → domain_env_qa_sft.jsonl 注册为 alpaca 数据集（时名 305 池；该文件名现指 §14 的 365 扩量池，305 池已归档）
   → qwen3_5_9b_domain_pt_then_sft.yaml 在 PT adapter 上 SFT（~18 步）
   → 留出 10 题（训练从未见过）：pt / pt_then_sft 两 adapter 各答一遍 → Kimi 对比评分出报告
 ```
@@ -404,67 +408,56 @@ API 钥匙放项目根 `.env`（已被 gitignore）：`DEEPSEEK_API_KEY`（出�
 
 ---
 
-## 13. DPO 终验（2026-08-28）：五轮收官封存
+## 13. DPO 终验（2026-08-28）
 
-> §13.1-13.7（DPO v1~v4 四轮实测）与 §14（定向补强 SFT）已归档至
-> `E:/AI/LLaMA-Factory_archive_20260828/docs/train_list_sft_dpo_v1-v4.md`；
-> 本文 §13/§15 中的旧章节引用均指向该归档。方法论提炼仍在 learning.md §8。
+> 更早的 DPO/SFT 迭代实测已归档：`E:/AI/LLaMA-Factory_archive_20260828/docs/train_list_sft_dpo_v1-v4.md`；方法论提炼见 learning.md §8。
 
-### 13.8 第五轮（知识到位基线重启，2026-08-28）：§13.7 开放问题的答案是"否"
-
-- **动机**：§13.7 留的开放问题——知识更到位的基线上，DPO 能否拿到 v4（净 -2）拿不到
-  的增益。基线换 §15 的 `pt_think_then_sft`（106 题净 +11）。
-- **配方**：v1/v4 逐字复刻（sigmoid/beta0.1/lr5e-6/2ep/量化与 PT/SFT 全同）；数据
-  `domain_env_pref` 291 对（v4 的 215 对原样复用 + 76 新增：55 条新 QA 造对 + 当年
-  劣化不合格种子 DeepSeek 非确定性二跑复检通过）。74 步 49 分钟（干净环境零抖动；
-  占用环境同配方要 3.4h+），train_loss 0.3235，产物 `pt_think_sft_then_dpo`。
-- **结果（106 题三轮多数决）**：SFT+DPO 29 / SFT 31 / 平 46（**净 -2**）——
-  与 v4 的净 -2 分毫不差。报告 `domain_env_qa_compare_dpo_report_majority.md`
-  （编排 `train_test/run_eval_dpo_ab.py`，judge 用 `--pair sft-dpo`）。
-- **交叉分析（与 §15 报告逐题对齐追踪）**：
-  1. 扩量 SFT 净赢旧版 SFT 的 31 题优势题：DPO 后守住 11 / **被冲掉 15** / 平 5——近半优势
-     被 SFT→DPO 这一步自己冲掉；
-  2. 扩量 SFT 净输的 20 题 DPO 仅救回 4；DPO 的 29 胜 = 11 守住 + 4 救回 + 14 来自原平题，
+- **配方**：sigmoid / pref_beta 0.1 / lr 5e-6 / 2 epoch / 量化与 PT/SFT 全同；数据
+  `domain_env_pref` 291 对（215 对复用 + 76 新增：55 条新 QA 造对 + 劣化种子复检通过）。
+  74 步 49 分钟（干净环境零抖动，占用环境同配方 3h+），train_loss 0.3235，产物
+  `pt_think_sft_then_dpo`。
+- **结果（106 题三轮多数决，基线 = §14 扩量 SFT）**：SFT+DPO 29 / SFT 31 / 平 46
+  （**净 -2**）。报告 `domain_env_qa_compare_dpo_report_majority.md`（编排
+  `train_test/run_eval_dpo_ab.py`，judge `--pair sft-dpo`）。
+- **交叉分析（与 §14 报告逐题对齐）**：
+  1. SFT 净赢旧版 SFT 的 31 题优势题：DPO 后守住 11 / **被冲掉 15** / 平 5——近半优势被
+     SFT→DPO 这一步自己冲掉；
+  2. SFT 净输的 20 题 DPO 仅救回 4；DPO 的 29 胜 = 11 守住 + 4 救回 + 14 来自原平题，
      增益与损耗对称抵消——**DPO 在此量级是重新洗牌，不是定向提升**；
-  3. 罚则/审批类 23 题净 -1，其中扩量 SFT 优势题 4 条又被冲掉 2——与 §13.7 "4 条存留 2"
-     同比例，50% 冲刷率第三次稳定复现（§13.7 → §15 → 本轮）。
-- **判定：DPO 五轮收官封存**（v1 +5 / v2 -9 / v3 负 / v4 -2 / 第五轮 -2，前四轮 36/39 题
-  口径、本轮 106 题口径，净结论一致）：
-  1. §13.7 开放问题闭环：**基线知识到位与否不改变 DPO 行为**，291 对 × 2ep 的
-     sigmoid DPO 在 LoRA rank8 上系统性抵消自身增益；
-  2. 冲刷不是噪声是机制：三轮独立观察均为 ~50% 冲刷率，"同时要定向事实 + 偏好"的
-     场景在此配方下不可得；
-  3. 增益路径回到 SFT 扩池（§15 已证 +11）。DPO 若再启用，只用于风格/格式对齐，
-     不指望知识题提分，且训后必须抽查定向事实存留。
+  3. 罚则/审批类 23 题净 -1，其中 SFT 优势题 4 条又被冲掉 2——约 50% 冲刷率，与历史
+     轮次观察一致。
+- **判定：DPO 路线封存**——基线知识到位与否不改变结论：~300 对量级 × 2ep 的 sigmoid DPO
+  在 LoRA rank8 上系统性抵消自身增益，且稳定冲刷 SFT 已教事实；增益路径是 SFT 扩池
+  （§14 净 +11）。若未来为风格/格式对齐再启用，训后必须抽查定向事实存留。
 
-## 15. SFT 扩量（2026-08-27）：项目首个方向一致的净正增益
+## 14. SFT 扩量（2026-08-27）：项目首个方向一致的净正增益
 
-### 15.1 配方
+### 14.1 配方
 
-- 数据：`domain_env_qa_sft` = `domain_env_qa_sft.jsonl` **365 条** = §14 的 305 过筛池
-  + 53 条罚则/审批定向过筛 + §14.4 的 5 条定向补强 + 2 条对比型 QA；
+- 数据：`domain_env_qa_sft` = `domain_env_qa_sft.jsonl` **365 条** = 归档 §14 的 305 过筛池
+  + 53 条罚则/审批定向过筛 + 归档 §14.4 的 5 条定向补强 + 2 条对比型 QA；
 - 训练：`qwen3_5_9b_domain_pt_then_sft.yaml`，从 PT 基线重训（非叠训），其余超参与
-  §14 逐字相同；138 步 41.5 分钟，train_loss 0.8814，产物 `pt_think_then_sft`；
+  归档 §14 逐字相同；138 步 41.5 分钟，train_loss 0.8814，产物 `pt_think_then_sft`；
 - 评测：**106 题新口径**（旧 36 剔 5 污染 + 75 新留出过筛），三轮多数决；编排
   `train_test/run_eval_ab.py`——双服务连续回填 + kimi 裁判奇偶换位 + 多数决汇总，
   任一环节失败显式抛错（服务 420s 未就绪/端口未释放/子脚本非零退出）。
 
-### 15.2 结果：净 +11
+### 14.2 结果：净 +11
 
 - 多数决扩量 SFT 31 / 旧版 SFT 20 / 平 55（**净 +11**，符号检验单侧 p=0.08）；r1/r2/r3 单轮
   净 +3/+2/+2 全正——四轮 DPO 从未出现过的方向一致性；
 - 总均分 2.80 vs 2.80 持平：增益是具体题换赢，不是整体提分；
 - 报告：`domain_env_qa_compare_report_majority.md`。
 
-### 15.3 机制：又是整体扩量，不是定向补强
+### 14.3 机制：又是整体扩量，不是定向补强
 
 - 罚则/审批类 16 题净 **-3**（3 胜/6 负/7 平）；其它 90 题净 **+14**；
 - §14.3 的教训第二次出现并升级：**定向补强救单题有效（4/5）、救题型无效；起作用的
   是池子整体变大**。"定向收益被整体重排抵消"在此升级为"扩量收益覆盖定向缺口"。
 
-### 15.4 遗留
+### 14.4 遗留
 
 - p=0.08 未达 0.05，严格说不显著；但三轮全正 + 方向一致，实操按净正对待；
-- `pt_think_then_sft` 已作为后续实验的 SFT 基线（§13.8 的 DPO 基线即此）；
+- `pt_think_then_sft` 已作为后续实验的 SFT 基线（§13 的 DPO 基线即此）；
   是否切为 chat 默认 adapter 待定——均分持平，切换理由是净胜而非提分；
 - 后续：继续扩 QA 池优先于任何偏好层操作。

@@ -51,7 +51,7 @@ report_to: none
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 8               # 有效 batch = 8
 learning_rate: 5.0e-6                        # DPO 比 SFT(5e-5) 小一档，防把 SFT 学到的能力冲掉（同 v1/v4）
-num_train_epochs: 2.0                        # 同 v1/v4
+num_train_epochs: 2.0                        # 偏好数据量大，遍数少防冲刷 SFT 已学内容
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
 bf16: true

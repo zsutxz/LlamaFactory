@@ -147,11 +147,6 @@ class BaseTrainer:
         self.state.epoch = self._resume_epoch
 
         if self.args.cp_size > 1:
-            # qwen3.5 is not supported because of the different attention implementation, which will be supported in the future.
-            if model.config.model_type == "qwen3_5":
-                raise RuntimeError(
-                    "Sequence parallel is not supported for qwen3.5 model due to its different attention implementation, which will be supported in the future."
-                )
             from ..plugins.model_plugins.parallelization.sequence_parallel import SequenceParallelModelPlugin
 
             if model.config._attn_implementation != "flash_attention_2":
@@ -312,6 +307,11 @@ class BaseTrainer:
                             self.model.parameters(), self.args.max_grad_norm, total_norm
                         )
                         grad_norm = total_norm.item()
+                        # Do not retain a full generation of gradient tensors across optimizer
+                        # steps. ``zero_grad(set_to_none=True)`` clears ``param.grad``, but this
+                        # local list would otherwise keep every old gradient alive until the next
+                        # assignment, doubling gradient memory during the following backward.
+                        del grads
 
                     if not torch.isfinite(torch.tensor(grad_norm)):  # type: ignore # pyright: ignore [reportUnknownReturnType]
                         logger.warning_rank0(f"Gradient norm is not finite: {grad_norm}")

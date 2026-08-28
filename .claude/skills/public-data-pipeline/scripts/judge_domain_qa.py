@@ -83,6 +83,8 @@ COMPARE_PAIRS = {
     "ref-model": ("reference", "answer_sft", "ref", "model"),
     # 通用 A/B 槽（如 SFT 基线 vs SFT_v5 扩量版，同阶段两模型对比）
     "a-b": ("answer_a", "answer_b", "sft", "sft_v5"),
+    # v5 基线 vs v5+DPO（同 think 链：SFT_v5 与其 DPO 后继，字段复用 a-b 的骨架槽）
+    "v5-dpo": ("answer_a", "answer_b", "sft_v5", "sft_v5_dpo"),
 }
 
 

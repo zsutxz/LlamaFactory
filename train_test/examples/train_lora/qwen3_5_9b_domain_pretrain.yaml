@@ -41,7 +41,7 @@ report_to: none
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 8          # 有效 batch = 1 × 8 = 8 个 2048 窗口
 learning_rate: 1.0e-4                   # PT 学习率比 SFT 高（1e-4 ~ 5e-4）
-num_train_epochs: 5.0                   # 语料小，多过几遍；领域适配常用 3~5
+num_train_epochs: 3.0                   # 语料小，多过几遍；2026-08-28 由 5 降为 3
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
 bf16: true

@@ -33,7 +33,7 @@ dataloader_num_workers: 0
 ### output
 output_dir: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # 扩量版独立目录
 logging_steps: 1
-save_steps: 5                                # 365 条约 46 步/epoch ×3 ≈ 137 步总量，每 5 步存档、limit 3 只留最近
+save_steps: 5                                # 365 条约 46 步/epoch ×2 ≈ 92 步总量，每 5 步存档、limit 3 只留最近
 save_total_limit: 3
 plot_loss: true
 overwrite_output_dir: true
@@ -44,7 +44,7 @@ report_to: none
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 8               # 有效 batch = 1 × 8 = 8
 learning_rate: 5.0e-5                        # resume 同一 adapter，比 PT(1e-4) 降一档，防把领域知识冲掉
-num_train_epochs: 3.0                        # 蒸馏批小，过 3 遍；loss 快速走低属预期（背老师答案），非过拟合警报
+num_train_epochs: 2.0                        # 2026-08-28 由 3 降为 2；loss 快速走低属预期（背老师答案），非过拟合警报
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
 bf16: true

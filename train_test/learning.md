@@ -282,7 +282,7 @@ llamafactory-cli train examples/train_lora/qwen3_4b_thinking_lora_sft.yaml
 
 ## 3. 偏好对齐 DPO
 
-> ✅ 已实测（9B 五轮实验，均无净增益——结论与方法论见 §8，v5 终验见 [train_list.md](./train_list.md) §13；v1~v4 记录已归档 `E:/AI/LLaMA-Factory_archive_20260828/docs/`）。配置蓝本：`examples/train_lora/qwen3_lora_dpo.yaml`。
+> ✅ 已实测（9B 五轮实验，均无净增益——结论与方法论见 §8，终验见 [train_list.md](./train_list.md) §13；v1~v4 记录已归档 `E:/AI/LLaMA-Factory_archive_20260828/docs/`）。配置蓝本：`examples/train_lora/qwen3_lora_dpo.yaml`。
 
 **用途**：用「同一问题的好回答 vs 坏回答」对比训练，调模型的回答**风格 / 偏好**（更无害、更符合人类偏好）。**不做新知识注入**——前提是 SFT 已把能力训好。变体：KTO（`stage: kto`，只需好/坏标签不成对）。
 
@@ -504,7 +504,7 @@ llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
 ## 8. 实验方法论：评测口径与迭代纪律（DPO 三连负复盘，2026-08-26）
 
 > 本节是 9B think 链 DPO（v1/v2/v3）三连负 + 定向补强验证（4/5 翻正）的**方法论提炼**，
-> 完整实测与数据见 [train_list.md](./train_list.md) §13（v5 终验）；v1~v4 四轮与定向补强记录已归档 `E:/AI/LLaMA-Factory_archive_20260828/docs/train_list_sft_dpo_v1-v4.md`。适用于任何"改数据/改超参→评测→再迭代"的实验循环。
+> 完整实测与数据见 [train_list.md](./train_list.md) §13（终验）；v1~v4 四轮与定向补强记录已归档 `E:/AI/LLaMA-Factory_archive_20260828/docs/train_list_sft_dpo_v1-v4.md`。适用于任何"改数据/改超参→评测→再迭代"的实验循环。
 
 ### 8.1 六条纪律（按踩坑代价排序）
 
@@ -531,9 +531,9 @@ llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
 > 2026-08-26 v4 复核：按六条纪律重试（v1 配方 + SFT_t 知识到位基线）——v2/v3 的净 -9
 > 回归被修复到净 -2（打平），教训有效；但 DPO 仍无净增益（v1 +5 与 v4 -2 均在不显著带内），
 > 且会部分冲掉定向 SFT 教的事实（4 条存留 2）。排序结论维持不变。详见归档 train_list §13.7。
-> 2026-08-28 v5 终验：知识到位基线（净 +11 的 SFT_v5）上重启 DPO——净 -2，与 v4 分毫不差，
+> 2026-08-28 第五轮终验：知识到位基线（净 +11 的扩量 SFT）上重启 DPO——净 -2，与 v4 分毫不差，
 > 且又冲掉近半 SFT 优势题（31 冲 15）。**五轮收官（+5/-9/负/-2/-2），DPO 路线封存**；
-> 增益路径回到 SFT 扩池（v5 扩量实测净 +11，见 train_list §13.8/§15）。
+> 增益路径回到 SFT 扩池（扩量实测净 +11，见 train_list §13.8/§15）。
 
 **数据覆盖 > PT > SFT >> DPO**（300 条 QA 量级实测）。DPO 起作用的前置是知识已到位；
 数据没覆盖到的条款细节，模型"不懂就编"，偏好优化只会改变编造的风格。

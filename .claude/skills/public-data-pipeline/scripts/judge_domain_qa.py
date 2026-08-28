@@ -77,14 +77,13 @@ COMPARE_TEMPLATE = """【原文片段】
 # 对比对子：骨架字段名 + 报告短标签（A=旧阶段，B=新阶段；init-compare/compare 按 pair 读写）
 COMPARE_PAIRS = {
     "pt-sft": ("answer_pt", "answer_sft", "pt", "sft"),
-    "sft-dpo": ("answer_sft", "answer_dpo", "sft", "dpo"),
     # on-policy 负样本筛选：reference(教师答案) vs answer_sft(模型自答)，
     # prefer=ref 或分差大的行 = 模型真实失败样本 → 偏好对 (chosen=reference, rejected=answer_sft)
     "ref-model": ("reference", "answer_sft", "ref", "model"),
-    # 通用 A/B 槽（如 SFT 基线 vs SFT_v5 扩量版，同阶段两模型对比）
-    "a-b": ("answer_a", "answer_b", "sft", "sft_v5"),
-    # v5 基线 vs v5+DPO（同 think 链：SFT_v5 与其 DPO 后继，字段复用 a-b 的骨架槽）
-    "v5-dpo": ("answer_a", "answer_b", "sft_v5", "sft_v5_dpo"),
+    # 通用 A/B 槽（任意两模型同题对比，标签中性）
+    "a-b": ("answer_a", "answer_b", "a", "b"),
+    # SFT vs SFT+DPO（think 链：扩量 SFT 与其 DPO 后继，字段复用 a-b 的骨架槽）
+    "sft-dpo": ("answer_a", "answer_b", "sft", "sft_dpo"),
 }
 
 
@@ -374,23 +373,12 @@ def main():
     ap.add_argument("--retries", type=int, default=3, help="单条 API 失败重试次数")
     args = ap.parse_args()
 
-    # sft-dpo 走独立骨架/报告（think 链），防 init-compare 误清空 Base 链已填文件；
-    # 用户显式传了非默认 --compare/--compare-report 时以用户为准
-    if args.pair == "sft-dpo":
-        if args.compare == os.path.join(DATA_DIR, "domain_env_qa_compare.jsonl"):
-            args.compare = os.path.join(DATA_DIR, "domain_env_think_qa_compare.jsonl")
-        if args.compare_report == os.path.join(DATA_DIR, "domain_env_qa_compare_report.md"):
-            args.compare_report = os.path.join(DATA_DIR, "domain_env_think_qa_compare_report.md")
-    elif args.pair == "ref-model":
+    # ref-model 走独立骨架/报告；用户显式传了非默认 --compare/--compare-report 时以用户为准
+    if args.pair == "ref-model":
         if args.compare == os.path.join(DATA_DIR, "domain_env_qa_compare.jsonl"):
             args.compare = os.path.join(DATA_DIR, "domain_env_onpolicy.jsonl")
         if args.compare_report == os.path.join(DATA_DIR, "domain_env_qa_compare_report.md"):
             args.compare_report = os.path.join(DATA_DIR, "domain_env_onpolicy_report.md")
-    elif args.pair == "a-b":
-        if args.compare == os.path.join(DATA_DIR, "domain_env_qa_compare.jsonl"):
-            args.compare = os.path.join(DATA_DIR, "domain_env_qa_compare_v5.jsonl")
-        if args.compare_report == os.path.join(DATA_DIR, "domain_env_qa_compare_report.md"):
-            args.compare_report = os.path.join(DATA_DIR, "domain_env_qa_compare_v5_report.md")
 
     if args.mode == "init-compare":  # 纯本地，不需要钥匙
         mode_init_compare(args)

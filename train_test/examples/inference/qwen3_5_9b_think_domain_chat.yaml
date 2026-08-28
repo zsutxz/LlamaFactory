@@ -2,18 +2,18 @@
 # 仅模型键（chat 的 infer 解析器不接受训练专用键，故独立于 train yaml）
 # 环境变量(必需)：LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1
 # SFT 问答(默认): llamafactory-cli chat train_test/examples/inference/qwen3_5_9b_think_domain_chat.yaml
-#   （2026-08-28 起默认 = SFT_v5：365 条扩量池，106 题三轮多数决净 +11，项目最佳 SFT；
+#   （2026-08-28 起默认 = 扩量 SFT：365 条池，106 题三轮多数决净 +11，项目最佳 SFT；
 #     旧 SFT/DPO v1~v4 checkpoint 已归档 E:/AI/LLaMA-Factory_archive_20260828/）
-# DPO 问答: 上行末尾加 adapter_name_or_path=train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_v5_then_dpo
-#   （v5 终验净 -2 且冲掉近半 SFT 优势题，五轮收官已封存，仅留作对照；详见 docs/train_list.md §13）
+# DPO 问答: 上行末尾加 adapter_name_or_path=train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_sft_then_dpo
+#   （第五轮终验净 -2 且冲掉近半 SFT 优势题，五轮收官已封存，仅留作对照；详见 docs/train_list.md §13）
 # PT  续写: 上行末尾加 adapter_name_or_path=train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think
 #   （key=value 覆盖语法；与 Base 链 qwen3_5_9b_domain_chat.yaml 对比时同题各答一遍）
-# enable_thinking: false 与训练机制对齐：think 链数据（domain_env_qa_v5/domain_env_pref_v5）本身无
+# enable_thinking: false 与训练机制对齐：think 链数据（domain_env_qa_sft/domain_env_pref）本身无
 #   <think> 内容，训练时 enable_thinking 默认 True，空 think 块注入 response 且计入 loss
 #   （template.py:475-478）；推理关思维链 = 生成点注入 <think>\n\n</think>\n\n，即训练学到的分布。
 #   想看 instruct 基座原生思维链可临时 enable_thinking=true 覆盖（305 条 SFT 未必压得住基座思考习惯）。
 model_name_or_path: model/Qwen3.5-9B          # think/instruct 版（非 Base），与 pt_think 链 adapter_config base 一致
-adapter_name_or_path: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft_v5   # think 链 SFT_v5（净+11 基线；DPO/PT 见上行注释切换）
+adapter_name_or_path: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # think 链扩量 SFT（净+11 基线；DPO/PT 见上行注释切换）
 quantization_bit: 4                           # 必须与 PT/SFT/DPO 完全一致，否则 adapter 挂不上量化基座
 quantization_method: bnb
 template: qwen3_5                             # 与训练链一致（ReasoningTemplate，勿改 qwen3_5_nothink）

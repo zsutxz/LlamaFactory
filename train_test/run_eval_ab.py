@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
-"""v5 评测编排：106 题三轮多数决 A/B（SFT 基线 vs SFT_v5）。
+"""扩量 SFT 评测编排：106 题三轮多数决 A/B（旧版 SFT 基线 vs 扩量 SFT）。
 
 流程（服务只起 2 次，同 adapter 连续回填三轮骨架副本）：
-  1) 复制 domain_env_qa_compare_v5.jsonl -> _r1/_r2/_r3 三份
+  1) 复制 domain_env_qa_compare.jsonl -> _r1/_r2/_r3 三份
   2) 起 api 服务(基线 adapter=pt_think_then_sft) -> ask_compare 依次回填三份的 answer_a -> 停服务
-  3) 起 api 服务(v5 adapter=pt_think_then_sft_v5)  -> 依次回填 answer_b -> 停服务
+  3) 起 api 服务(SFT adapter=pt_think_then_sft)  -> 依次回填 answer_b -> 停服务
   4) kimi --mode compare --pair a-b 逐轮出报告（_report_r{r}.md）
   5) 三轮 prefer 多数决汇总 -> _report_majority.md
 
-用法：python train_test/run_eval_v5_ab.py [--rounds 3]
-前置：SFT_v5 训练已完成；.env 有 MOONSHOT_API_KEY；GPU 空闲。
+用法：python train_test/run_eval_sft_ab.py [--rounds 3]
+前置：扩量 SFT 训练已完成；.env 有 MOONSHOT_API_KEY；GPU 空闲。
 注意（2026-08-28 清理后）：ADAPTER_A 指向的旧 SFT（pt_think_then_sft）已归档至
 E:/AI/LLaMA-Factory_archive_20260828/，本脚本为历史实验记录；如需重跑对照，把
-ADAPTER_A 改指归档路径（跨目录挂载）或恢复归档。v5 vs v5+DPO 的后续评测用
-run_eval_v5_dpo_ab.py（A/B 侧均为现存 adapter）。
+ADAPTER_A 改指归档路径（跨目录挂载）或恢复归档。SFT vs SFT+DPO 的后续评测用
+run_eval_sft_dpo_ab.py（A/B 侧均为现存 adapter）。
 """
 import argparse
 import json
@@ -29,8 +29,8 @@ DATA = os.path.join(REPO, "train_test", "data")
 LF_EXE = r"C:\Users\skype\.conda\envs\llama-factory\Scripts\llamafactory-cli.exe"
 INFER_YAML = os.path.join(REPO, "train_test", "examples", "inference", "qwen3_5_9b_think_domain_chat.yaml")
 ADAPTER_A = os.path.join(REPO, "train_test", "saves", "Qwen3.5-9B-domain-env", "lora", "pt_think_then_sft")
-ADAPTER_B = os.path.join(REPO, "train_test", "saves", "Qwen3.5-9B-domain-env", "lora", "pt_think_then_sft_v5")
-SKEL = os.path.join(DATA, "domain_env_qa_compare_v5.jsonl")
+ADAPTER_B = os.path.join(REPO, "train_test", "saves", "Qwen3.5-9B-domain-env", "lora", "pt_think_then_sft")
+SKEL = os.path.join(DATA, "domain_env_qa_compare.jsonl")
 ASK = os.path.join(REPO, ".claude", "skills", "public-data-pipeline", "scripts", "ask_compare.py")
 JUDGE = os.path.join(REPO, ".claude", "skills", "public-data-pipeline", "scripts", "judge_domain_qa.py")
 BASE_URL = "http://127.0.0.1:8000/v1"
@@ -92,7 +92,7 @@ def majority(rounds):
     out = {}
     for idx in rounds[0]:
         votes = [r.get(idx, "tie") for r in rounds]
-        for v in ("sft", "sft_v5", "tie"):
+        for v in ("sft", "sft", "tie"):
             if votes.count(v) >= 2:
                 out[idx] = v
                 break
@@ -105,7 +105,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=3)
     args = ap.parse_args()
-    copies = [os.path.join(DATA, f"domain_env_qa_compare_v5_r{r}.jsonl") for r in range(1, args.rounds + 1)]
+    copies = [os.path.join(DATA, f"domain_env_qa_compare_r{r}.jsonl") for r in range(1, args.rounds + 1)]
     for c in copies:
         shutil.copyfile(SKEL, c)
 
@@ -116,16 +116,16 @@ def main():
     finally:
         stop(proc, "sft_base")
 
-    proc = serve(ADAPTER_B, "sft_v5")
+    proc = serve(ADAPTER_B, "sft")
     try:
         for c in copies:
             run(ASK, "--compare", c, "--field", "answer_b")
     finally:
-        stop(proc, "sft_v5")
+        stop(proc, "sft")
 
     parsed = []
     for r, c in enumerate(copies, 1):
-        report = os.path.join(DATA, f"domain_env_qa_compare_v5_report_r{r}.md")
+        report = os.path.join(DATA, f"domain_env_qa_compare_report_r{r}.md")
         run(JUDGE, "--mode", "compare", "--pair", "a-b", "--compare", c,
             "--compare-report", report, "--sleep", "0.3")
         prefs = {}
@@ -137,22 +137,22 @@ def main():
         print(f"[round {r}] 解析 {len(prefs)} 题 prefer", flush=True)
 
     mo = majority(parsed)
-    n_b = sum(1 for v in mo.values() if v == "sft_v5")
+    n_b = sum(1 for v in mo.values() if v == "sft")
     n_a = sum(1 for v in mo.values() if v == "sft")
     n_t = sum(1 for v in mo.values() if v == "tie")
     lines = [
-        "# SFT vs SFT_v5 三轮多数决（106 题 v5 骨架）", "",
-        f"多数决：SFT_v5 胜 {n_b} / SFT 胜 {n_a} / 平 {n_t}（净 {n_b - n_a:+d}）", "",
-        f"口径：v5 骨架 = 旧 36 剔 5 污染 + 75 新留出过筛；与 v1~v4 的 36 题口径不可直接对比。",
-        f"轮次报告：domain_env_qa_compare_v5_report_r1~r{args.rounds}.md", "",
+        "# 旧版 SFT vs 扩量 SFT 三轮多数决（106 题骨架）", "",
+        f"多数决：扩量 SFT 胜 {n_b} / SFT 胜 {n_a} / 平 {n_t}（净 {n_b - n_a:+d}）", "",
+        f"口径：106 题骨架 = 旧 36 剔 5 污染 + 75 新留出过筛；与 v1~v4 的 36 题口径不可直接对比。",
+        f"轮次报告：domain_env_qa_compare_report_r1~r{args.rounds}.md", "",
         "| # | r1 | r2 | r3 | 多数决 |", "|---|---|---|---|---|",
     ]
     for idx in sorted(mo):
         cells = [parsed[r].get(idx, "-") for r in range(args.rounds)] if args.rounds == 3 else ["-"] * 3
         lines.append(f"| {idx} | {cells[0]} | {cells[1]} | {cells[2]} | {mo[idx]} |")
-    with open(os.path.join(DATA, "domain_env_qa_compare_v5_report_majority.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(DATA, "domain_env_qa_compare_report_majority.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-    print(f"[done] 多数决 SFT_v5 {n_b} / SFT {n_a} / 平 {n_t}（净 {n_b - n_a:+d}）-> report_majority.md", flush=True)
+    print(f"[done] 多数决扩量 SFT {n_b} / SFT {n_a} / 平 {n_t}（净 {n_b - n_a:+d}）-> report_majority.md", flush=True)
 
 
 if __name__ == "__main__":

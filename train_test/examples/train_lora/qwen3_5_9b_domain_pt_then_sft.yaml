@@ -1,11 +1,11 @@
-### Qwen3.5-9B 领域 SFT（think 链）· v5 扩量版：与 qwen3_5_9b_domain_pt_then_sft_t.yaml 逐字同超参，
-### 唯一变量：dataset = domain_env_qa_v5（365 条 = 305 过筛蒸馏 + 5 定向补强 + 2 对比型 + 53 罚则/审批定向过筛，
+### Qwen3.5-9B 领域 SFT（think 链）· 扩量版：与 qwen3_5_9b_domain_pt_then_sft_t.yaml 逐字同超参，
+### 唯一变量：dataset = domain_env_qa_sft（365 条 = 305 过筛蒸馏 + 5 定向补强 + 2 对比型 + 53 罚则/审批定向过筛，
 ### 另有 4 条与旧池重复已去重）。罚则/审批 57 条来自 77 个 train 块的 --focus 定向出题（train_test/logs/judge_penalty_63.log）；
 ### 对比型 2 条为核安全年报 4月1日 vs 放射性容器编码 1月31日（§14 第 5 缺口的竞争帧对策，quote 逐字核验）。
-### 评测口径：v5 新骨架 106 题（domain_env_qa_compare_v5.jsonl = 旧 36 题剔 5 污染 + 75 条新留出过筛题），
+### 评测口径：新骨架 106 题（domain_env_qa_compare.jsonl = 旧 36 题剔 5 污染 + 75 条新留出过筛题），
 ### 三轮多数决 A/B，对照 = 原 SFT（pt_think_then_sft，305 条版）——与 v1~v4 的 36 题口径不可直接对比。
 ### 环境变量(必需)：LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1
-### 启动：llamafactory-cli train train_test/examples/train_lora/qwen3_5_9b_domain_pt_then_sft_v5.yaml
+### 启动：llamafactory-cli train train_test/examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml
 
 ### model
 model_name_or_path: model/Qwen3.5-9B          # think/instruct 版（非 Base），与 pt_think 的 adapter_config base 一致
@@ -23,7 +23,7 @@ lora_alpha: 16
 lora_target: all
 
 ### dataset
-dataset: domain_env_qa_v5                    # 365 条（唯一变量）；口径与构成见文件头注
+dataset: domain_env_qa_sft                    # 365 条（唯一变量）；口径与构成见文件头注
 dataset_dir: train_test/data
 template: qwen3_5                            # 必须显式指定：Qwen3.5 的 chat_template 带 raise_exception
 cutoff_len: 2048
@@ -31,7 +31,7 @@ preprocessing_num_workers: 1                 # Windows 多进程 map 会卡死�
 dataloader_num_workers: 0
 
 ### output
-output_dir: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft_v5   # v5 扩量版独立目录
+output_dir: train_test/saves/Qwen3.5-9B-domain-env/lora/pt_think_then_sft   # 扩量版独立目录
 logging_steps: 1
 save_steps: 5                                # 365 条约 46 步/epoch ×3 ≈ 137 步总量，每 5 步存档、limit 3 只留最近
 save_total_limit: 3

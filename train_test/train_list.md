@@ -105,6 +105,8 @@ PDF(pymupdf) / md / html(bs4)  → 清洗 → 段落切块(~1800字符) → 哈�
 
 > PT 自动 packing：336 块 ≈ 72 个 2048 窗口，有效 batch 8 → ~9 步/epoch × 5 = 45 步。
 
+> ⚠️ 现存 `qwen3_8b_domain_pretrain.yaml` 的内容已重指向环保语料（`domain_env` 566 块、5 epochs、输出 `Qwen3-8B-domain-env`，**未实测的备用配置**）；本节与 §6/§7 的实测数据来自当时的论文语料版（旧内容见 git 历史，收拢提交 7bb5d593 之前）。
+
 ---
 
 ## 5. 排坑实录（最有价值的部分，共 6 个）
@@ -138,7 +140,7 @@ bitsandbytes.__version__            -> 0.48.2    # ≥0.43 即支持 Blackwell
 
 `chat examples/.../train.yaml` 直接报 `ValueError: Some keys are not used by the HfArgumentParser: ['do_train','learning_rate','save_steps', ...]`。
 原因：chat 走 `get_infer_args`，infer 解析器只认模型/推理键，训练专用键一律拒绝。
-解决：**单独建一份只含模型键的 infer yaml**（`examples/inference/qwen3_8b_domain_chat.yaml`：`model_name_or_path` + `quantization_bit/method` + `template` + `infer_backend`），不含任何训练键。
+解决：**单独建一份只含模型键的 infer yaml**（`train_test/examples/inference/qwen3_8b_domain_chat.yaml`：`model_name_or_path` + `quantization_bit/method` + `template` + `infer_backend`），不含任何训练键。
 
 ### 坑 5：chat 的 key=value 只能「覆盖」、不能「单独成参」— 8B
 
@@ -234,11 +236,12 @@ prefix: "Multimodal memory" is a crucial concept that describes how an agent han
 
 ## 10. 动手清单（复现 / 自跑）
 
-> PowerShell 流程，逐步勾选；★ 为必查检查点。以 **8B** 为准，跑 4B 只需把 yaml 换成 `qwen3_4b_domain_pretrain.yaml`、去掉量化相关项。
+> PowerShell 流程，逐步勾选；★ 为必查检查点。以 **8B** 为准，跑 4B 只需把 yaml 换成 `qwen3_4b_domain_pretrain.yaml`（已删，git 034e0016）、去掉量化相关项。
+> ⚠️ 现行 8B yaml 已重指向环保语料——复现本节论文链实测：第 0 步重建语料后，还需把 yaml 的 `dataset/eval_dataset` 改回 `domain_papers(_eval)`、`output_dir` 指回 `train_test/saves/Qwen3-8B-domain`（论文版全量配置见 git 历史）。
 
 **0. 前置确认**（已就绪，可选验证）
-- [ ] 语料 `train_test/data/domain_papers.jsonl` / `_eval.jsonl` 在；训练 yaml `train_test/examples/train_lora/qwen3_{4,8}b_domain_pretrain.yaml`、续写 yaml `examples/inference/qwen3_8b_domain_chat.yaml` 在；`data/dataset_info.json` 含 `domain_papers` / `domain_papers_eval`
-- [ ] 换语料才重跑 `python scripts\data\build_domain_corpus.py`（需带 pymupdf 的环境）
+- [ ] 训练 yaml `train_test/examples/train_lora/qwen3_8b_domain_pretrain.yaml`、续写 yaml `train_test/examples/inference/qwen3_8b_domain_chat.yaml` 在；`train_test/data/dataset_info.json` 是当前注册表
+- [ ] 4B/8B 语料产物 `domain_papers.jsonl` / `_eval.jsonl` 已随清理删除（未入 git、未归档）——复现需从上游 PDF/md 重跑构建：`python .claude/skills/public-data-pipeline/scripts/build_domain_corpus.py`（需带 pymupdf 的环境），再按 §3.3 注册
 
 **1. 预检**（2 分钟，§5 坑 1/3）
 - [ ] `conda activate llama-factory`
@@ -260,29 +263,29 @@ prefix: "Multimodal memory" is a crucial concept that describes how an agent han
 - [ ] 仍需每次手设（`HF_HUB_OFFLINE` 挂死会挡住联网下模型）：`$env:HF_HOME='E:\AI\LLaMA-Factory\hf_cache'; $env:HF_HUB_OFFLINE='1'`
 
 **3. 冒烟 3 步 ★检查点**（~5 分钟）
-- [ ] `llamafactory-cli train examples\train_lora\qwen3_8b_domain_pretrain.yaml max_samples=80 max_steps=3 output_dir=saves\Qwen3-8B-domain\lora\pt_smoke`
+- [ ] `llamafactory-cli train train_test\examples\train_lora\qwen3_8b_domain_pretrain.yaml max_samples=80 max_steps=3 output_dir=train_test\saves\Qwen3-8B-domain\lora\pt_smoke`
 - [ ] 不报错、不 OOM；结束 PPL ≈ 15（基线）——**任一不对就停，别进第 4 步**
 
 **4. 正式训练**（8B ~47 分钟 / 4B ~35 分钟）
-- [ ] `llamafactory-cli train examples\train_lora\qwen3_8b_domain_pretrain.yaml`（`overwrite_output_dir:true` 覆盖旧产物）
+- [ ] `llamafactory-cli train train_test\examples\train_lora\qwen3_8b_domain_pretrain.yaml`（`overwrite_output_dir:true` 覆盖旧产物）
 - [ ] 另开窗口 `nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv -l 10` → 99% util + ~14GB（tee 块缓冲看不到 loss 属正常）
 
 **5. 看结果**（§7）
-- [ ] `Get-Content saves\Qwen3-8B-domain\lora\pt\all_results.json` → `eval_perplexity` ≈ 11.4
+- [ ] `Get-Content train_test\saves\Qwen3-8B-domain\lora\pt\all_results.json` → `eval_perplexity` ≈ 11.4
 - [ ] 曲线 `training_eval_loss.png`；每步 `trainer_state.json`；停训信号 = 验证 PPL 进平台
 
 **6. 续写对照**（base vs adapter，§5 坑 4/5）
-- [ ] base：`llamafactory-cli chat examples\inference\qwen3_8b_domain_chat.yaml`
-- [ ] adapter：`llamafactory-cli chat examples\inference\qwen3_8b_domain_chat.yaml adapter_name_or_path=saves\Qwen3-8B-domain\lora\pt`
+- [ ] base：`llamafactory-cli chat train_test\examples\inference\qwen3_8b_domain_chat.yaml`
+- [ ] adapter：`llamafactory-cli chat train_test\examples\inference\qwen3_8b_domain_chat.yaml adapter_name_or_path=train_test\saves\Qwen3-8B-domain\lora\pt`
 - [ ] 喂同一句领域前缀对比续写
 
-> PPL 用训练内评；独立基座 PPL 用 `cal_ppl.py`：4B 可跑（`--model_name_or_path model/Qwen3-4B --stage pt --dataset domain_papers_eval`），8B 会 OOM（§5 坑 6），不建议。
+> PPL 用训练内评；独立基座 PPL 用 `cal_ppl.py`：4B 可跑（`--model_name_or_path model/Qwen3-4B --stage pt --dataset domain_papers_eval`，注册名随语料清理移除、重建语料后需先注册），8B 会 OOM（§5 坑 6），不建议。
 
 ---
 
 ## 11. 产物文件清单（2026-08-28 对齐现状）
 
-**现存（9B think 链 + 共用资产，均在 `train_test/` 下）**：
+**现存（9B think 链 + 共用资产；路径相对项目根）**：
 
 | 文件 | 作用 |
 |------|------|
@@ -290,20 +293,23 @@ prefix: "Multimodal memory" is a crucial concept that describes how an agent han
 | `.claude/skills/public-data-pipeline/scripts/generate_domain_qa.py` | 蒸馏造数脚本（DeepSeek 出题 + quote 机械校验 + manifest 幂等，§12） |
 | `.claude/skills/public-data-pipeline/scripts/judge_domain_qa.py` | 裁判脚本（三维评分三档分流 / 对比评分 / `--pair sft-dpo`，§12） |
 | `.claude/skills/public-data-pipeline/scripts/ask_compare.py` | 留出题自动问答回填（配合本地 api 服务，§12 坑 7） |
-| `data/domain_papers.jsonl` / `domain_papers_eval.jsonl` | 4B/8B 训练/验证语料（两模型共用） |
-| `data/domain_env.jsonl` / `domain_env_eval.jsonl` | 9B PT 训练/验证语料（think 链） |
-| `data/domain_env_qa.jsonl` / `_judged` / `_manifest` | 出题上游（生成 → 过筛索引，未来扩池去重用） |
-| `data/domain_env_qa_sft.jsonl`（365 条）+ `domain_env_pref.jsonl`（291 对） | SFT 扩量池 / DPO 偏好对（注册名 `domain_env_qa_sft` / `domain_env_pref`） |
-| `data/domain_env_qa_compare.jsonl`（106 题骨架）及 `_r1~r3` / `_report_*` | 两轮 A/B 评测骨架、回填与三轮多数决报告（SFT 扩量版 / SFT+DPO 版各一套，文件名带 `_dpo` 的为后者） |
-| `examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml` | 9B PT→SFT 配置（365 池，§14） |
-| `examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo.yaml` | 9B SFT→DPO 配置（§13，已封存仅留对照） |
-| `examples/inference/qwen3_5_9b_think_domain_chat.yaml` | 9B think 链推理配置（默认 SFT；key=value 切 PT/DPO adapter） |
-| `saves/Qwen3.5-9B-domain-env/lora/` 下 `pt_think` / `pt_think_then_sft` / `pt_think_sft_then_dpo` | think 链 PT → SFT → DPO 三个 adapter（`pt/` 为 no-think 链 PT 基线） |
-| `run_eval_ab.py` / `run_eval_dpo_ab.py` + `run_dpo.bat` / `run_eval_dpo.bat` | A/B 评测编排（历史首轮 / 现役 SFT vs SFT+DPO）与分离进程启动器 |
+| `train_test/data/domain_env.jsonl` / `domain_env_eval.jsonl` + `_stats.txt` | 9B PT 训练/验证语料（think 链）与统计 |
+| `train_test/data/domain_env_qa.jsonl` + `domain_env_qa_stats.txt` | 出题上游 QA 全池；judged / qa manifest 已清理（think 链旧版在归档 `domain_env_qa_t_*`） |
+| `train_test/data/domain_env_qa_sft.jsonl`（365 条）/ `domain_env_pref.jsonl`（291 对）+ `_pref_manifest` / `_pref_stats` | SFT 扩量池 / DPO 偏好对及 manifest（注册名 `domain_env_qa_sft` / `domain_env_pref`） |
+| `train_test/data/domain_env_qa_compare.jsonl` + `_compare_dpo_r1~r3.jsonl` + `_compare_dpo_report_r1.md` | 106 题评测骨架 + DPO 终验三轮回填与 r1 报告（两份三轮多数决汇总报告已删，结论存 §13/§14） |
+| `train_test/examples/train_lora/qwen3_5_9b_domain_pretrain.yaml` | 9B PT 配置（3 epochs，2026-08-28 由 5 降 3） |
+| `train_test/examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml` | 9B PT→SFT 配置（365 池、2 epochs，§14） |
+| `train_test/examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo.yaml` | 9B SFT→DPO 配置（§13，已封存仅留对照） |
+| `train_test/examples/train_lora/qwen3_8b_domain_pretrain.yaml` | 8B QLoRA 配置（现行内容已重指向环保语料，未实测备用；论文版见 git 历史，§4） |
+| `train_test/examples/inference/qwen3_5_9b_think_domain_chat.yaml` | 9B think 链推理配置（默认 SFT；key=value 切 PT/DPO adapter） |
+| `train_test/saves/Qwen3.5-9B-domain-env/lora/` 下 `pt_think` / `pt_think_then_sft` / `pt_think_sft_then_dpo` | think 链 PT → SFT → DPO 三个 adapter（`pt/` 为 no-think 链 PT 基线） |
+| `train_test/run_eval_dpo_ab.py` + `run_eval_dpo.bat` | 现役 SFT vs SFT+DPO 对照评测编排与分离进程启动器（SFT 扩量版 `run_eval_ab.py`、旧启动器 `run_dpo.bat` 已删） |
 
-**已归档（`E:/AI/LLaMA-Factory_archive_20260828/`，2026-08-28 起）**：SFT/DPO v1~v4 全部 checkpoint（10 项 ~7.3GB）、旧版 305 池与 pref v1~v4 数据、旧对比报告、旧 yaml 9 个、§13.1-13.7/§14 记录（`docs/train_list_sft_dpo_v1-v4.md`）。
+**已归档（`E:/AI/LLaMA-Factory_archive_20260828/`，2026-08-28 起）**：`train_test/saves/`（SFT/DPO v1~v4 checkpoint 10 项 ~7.3GB）、`train_test/data/`（旧 305 池、pref v1~v4、旧对比报告 v1~v4 轮等 47 文件）、`train_test/examples/`（旧 yaml 9 个）、`train_test/logs/`、`docs/train_list_sft_dpo_v1-v4.md`（旧 §13.1-13.7/§14 实测记录）。
 
-**已不在本机（git 历史可查）**：4B/8B 训练产物（`saves/Qwen3-4B/8B-domain/`）、`qwen3_4b_domain_pretrain.yaml`（提交 034e0016）、4B-Thinking SFT 系列资产。
+**已删除不在本机**：`qwen3_4b_domain_pretrain.yaml`（git 034e0016 可查）、4B-Thinking SFT 系列资产（git ad1ba1b9）、4B/8B 论文语料产物 `domain_papers*.jsonl`（未入 git 未归档，可由构建脚本从上游 PDF/md 重建，§10 第 0 步）。
+
+**仍在但不属于当前链**：`train_test/saves/` 下 4B/8B 论文链与早期 Thinking 产物（`Qwen3-4B-domain`、`Qwen3-8B-domain`、`Qwen3-{0.6B,1.7B,4B}-Thinking`）。
 
 ---
 
@@ -342,15 +348,15 @@ python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --promote 
 
 # ③ SFT（训练/推理命令都带四项环境变量，9B 必须 LF_ALLOW_TORCH29_CONV3D=1）
 LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=E:\AI\LLaMA-Factory\hf_cache HF_HUB_OFFLINE=1 \
-  llamafactory-cli train examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml max_steps=3   # 冒烟
+  llamafactory-cli train train_test/examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml max_steps=3   # 冒烟
 # 正式：去掉 max_steps=3（约 18 步，几分钟）
 
 # ④ 留出 10 题对比（全自动：本地 api 服务自动问答，免人工 chat 粘贴）
 python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --mode init-compare        # 生成对比骨架
 # 起 PT 服务 → ask_compare 回填 answer_pt → 停服务；换 pt_then_sft adapter 重启 → 回填 answer_sft
 LF_ALLOW_TORCH29_CONV3D=1 PYTHONUTF8=1 HF_HOME=... HF_HUB_OFFLINE=1 API_HOST=127.0.0.1 API_PORT=8000 \
-  llamafactory-cli api examples/inference/qwen3_5_9b_domain_chat.yaml \
-  adapter_name_or_path=saves/Qwen3.5-9B-domain-env/lora/pt
+  llamafactory-cli api train_test/examples/inference/qwen3_5_9b_domain_chat.yaml \
+  adapter_name_or_path=train_test/saves/Qwen3.5-9B-domain-env/lora/pt
 PYTHONUTF8=1 python .claude/skills/public-data-pipeline/scripts/ask_compare.py --field answer_pt
 PYTHONUTF8=1 python .claude/skills/public-data-pipeline/scripts/ask_compare.py --field answer_sft   # 换 pt_then_sft adapter 重启服务后
 python .claude/skills/public-data-pipeline/scripts/judge_domain_qa.py --mode compare             # Kimi 对比评分 → _compare_report.md
@@ -417,8 +423,9 @@ API 钥匙放项目根 `.env`（已被 gitignore）：`DEEPSEEK_API_KEY`（出�
   74 步 49 分钟（干净环境零抖动，占用环境同配方 3h+），train_loss 0.3235，产物
   `pt_think_sft_then_dpo`。
 - **结果（106 题三轮多数决，基线 = §14 扩量 SFT）**：SFT+DPO 29 / SFT 31 / 平 46
-  （**净 -2**）。报告 `domain_env_qa_compare_dpo_report_majority.md`（编排
-  `train_test/run_eval_dpo_ab.py`，judge `--pair sft-dpo`）。
+  （**净 -2**）。三轮回填 `train_test/data/domain_env_qa_compare_dpo_r1~r3.jsonl`，样例报告
+  `_dpo_report_r1.md`（多数决汇总报告已删，结论即本节）；编排 `train_test/run_eval_dpo_ab.py`，
+  judge `--pair sft-dpo`。
 - **交叉分析（与 §14 报告逐题对齐）**：
   1. SFT 净赢旧版 SFT 的 31 题优势题：DPO 后守住 11 / **被冲掉 15** / 平 5——近半优势被
      SFT→DPO 这一步自己冲掉；
@@ -438,16 +445,17 @@ API 钥匙放项目根 `.env`（已被 gitignore）：`DEEPSEEK_API_KEY`（出�
   + 53 条罚则/审批定向过筛 + 归档 §14.4 的 5 条定向补强 + 2 条对比型 QA；
 - 训练：`qwen3_5_9b_domain_pt_then_sft.yaml`，从 PT 基线重训（非叠训），其余超参与
   归档 §14 逐字相同；138 步 41.5 分钟，train_loss 0.8814，产物 `pt_think_then_sft`；
-- 评测：**106 题新口径**（旧 36 剔 5 污染 + 75 新留出过筛），三轮多数决；编排
-  `train_test/run_eval_ab.py`——双服务连续回填 + kimi 裁判奇偶换位 + 多数决汇总，
-  任一环节失败显式抛错（服务 420s 未就绪/端口未释放/子脚本非零退出）。
+- 评测：**106 题新口径**（旧 36 剔 5 污染 + 75 新留出过筛），三轮多数决；编排当时用
+  `run_eval_ab.py`（已删，同构逻辑由现役 `train_test/run_eval_dpo_ab.py` 承担）——双服务
+  连续回填 + kimi 裁判奇偶换位 + 多数决汇总，任一环节失败显式抛错（服务 420s 未就绪/
+  端口未释放/子脚本非零退出）。
 
 ### 14.2 结果：净 +11
 
 - 多数决扩量 SFT 31 / 旧版 SFT 20 / 平 55（**净 +11**，符号检验单侧 p=0.08）；r1/r2/r3 单轮
   净 +3/+2/+2 全正——四轮 DPO 从未出现过的方向一致性；
 - 总均分 2.80 vs 2.80 持平：增益是具体题换赢，不是整体提分；
-- 报告：`domain_env_qa_compare_report_majority.md`。
+- 报告与三轮回填 jsonl 已随清理删除，结论即本节（106 题骨架仍在，§11）。
 
 ### 14.3 机制：又是整体扩量，不是定向补强
 

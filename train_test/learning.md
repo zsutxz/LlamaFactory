@@ -133,7 +133,7 @@ huggingface-cli download Qwen/Qwen3-1.7B --local-dir model/Qwen3-1.7B
 ## 1. 预训练 PT（继续预训练 / 知识注入）
 
 > ✅ 已实测（Qwen3-4B + 领域论文/文档语料，45 步、5 epochs 跑通，详见 1.5）。
-> 配置蓝本：4B 专属 yaml 已删（git 034e0016 可查），现存同款见 `train_test/examples/train_lora/qwen3_8b_domain_pretrain.yaml`（官方示例 `examples/train_lora/qwen3_lora_pretrain.yaml`）。
+> 配置蓝本：4B 专属 yaml 已删（git 034e0016 可查），现存同配方见 `train_test/examples/train_lora/qwen3_8b_domain_pretrain.yaml`（现行内容已重指向环保语料，见 train_list §4；官方示例 `examples/train_lora/qwen3_lora_pretrain.yaml`）。
 
 **用途**：把**领域纯文本**（非问答对）灌进模型，做知识注入 / 领域适配。学的是「知识 + 语言风格」。
 
@@ -199,7 +199,7 @@ bf16: true
 ### 1.3 训练命令
 
 ```bash
-llamafactory-cli train examples/train_lora/qwen3_pt.yaml   # 你的配置路径
+llamafactory-cli train <你的配置.yaml>   # 按 1.2 从官方蓝本 examples/train_lora/qwen3_lora_pretrain.yaml 复制改
 ```
 
 ### 1.4 ⚠️ 关键认知
@@ -244,7 +244,7 @@ llamafactory-cli train examples/train_lora/qwen3_pt.yaml   # 你的配置路径
 
 ### 2.2 配置（实测蓝本）
 
-`examples/train_lora/qwen3_4b_thinking_lora_sft.yaml` 关键项：
+`examples/train_lora/qwen3_4b_thinking_lora_sft.yaml`（已删，git ad1ba1b9 可查）关键项：
 
 | 分块 | 参数 | 值 | 说明 |
 |-----|------|----|------|
@@ -266,7 +266,8 @@ llamafactory-cli train examples/train_lora/qwen3_pt.yaml   # 你的配置路径
 ### 2.3 训练命令
 
 ```bash
-llamafactory-cli train examples/train_lora/qwen3_4b_thinking_lora_sft.yaml
+llamafactory-cli train train_test/examples/train_lora/qwen3_5_9b_domain_pt_then_sft.yaml
+# 上为现行 9B 领域 SFT 配置；早期 4B-Thinking 版已删（git ad1ba1b9 可查）
 ```
 
 ### 2.4 实测坑
@@ -331,7 +332,8 @@ bf16: true
 ### 3.3 训练命令
 
 ```bash
-llamafactory-cli train examples/train_lora/qwen3_dpo.yaml
+llamafactory-cli train examples/train_lora/qwen3_lora_dpo.yaml
+# 上为官方蓝本；本机 9B 实测版在 train_test/examples/train_lora/qwen3_5_9b_domain_pt_sft_then_dpo.yaml（路线已封存，仅留对照）
 ```
 
 > ⚠️ DPO 的 `learning_rate` 必须远小于 SFT（5e-6 级别），否则容易把模型训崩。DPO 通常加载 **SFT 后的 adapter** 作为起点（`adapter_name_or_path` 指向 SFT 产物）。
@@ -374,14 +376,14 @@ trust_remote_code: true
 ```bash
 # Git Bash
 conda activate llama-factory
-PYTHONUTF8=1 llamafactory-cli chat examples/inference/qwen3_lora_chat.yaml
+PYTHONUTF8=1 llamafactory-cli chat train_test/examples/inference/qwen3_lora_chat.yaml
 ```
 
 ```powershell
 # PowerShell
 conda activate llama-factory
 $env:PYTHONUTF8=1
-llamafactory-cli chat examples/inference\qwen3_merged_chat.yaml
+llamafactory-cli chat train_test/examples/inference\qwen3_merged_chat.yaml
 ```
 
 > ⚠️ **中文输入必须 `PYTHONUTF8=1`**（非 UTF-8 终端会把中文损坏成孤立代理项，tokenizers 拒绝；换 fast/slow tokenizer、调 thinking 都没用）。
@@ -445,7 +447,7 @@ template: qwen3
 ### 6.2 命令
 
 ```bash
-llamafactory-cli train examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml
+llamafactory-cli train train_test/examples/extras/nlg_eval/qwen3_4b_thinking_predict.yaml
 ```
 
 ### 6.3 产出（`saves/Qwen3-4B-Thinking/lora/predict/`，早期产物已清理，字段说明仍适用）
@@ -485,7 +487,7 @@ export_legacy_format: false             # false=safetensors(推荐)；true=pytor
 ### 7.2 命令
 
 ```bash
-llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
+llamafactory-cli export train_test/examples/merge_lora/qwen3_4b_thinking_export.yaml
 ```
 
 导出到 `saves/Qwen3-4B-Thinking/merged/`（早期产物已清理；Qwen3-4B bf16 约 8GB，按 `export_size: 5` 分 2 个 safetensors 分片）。合并后可直接用 vLLM / Ollama（目录里有 `Modelfile`）/ transformers 加载部署，不必再走 LF。
@@ -532,9 +534,6 @@ llamafactory-cli export examples/merge_lora/qwen3_4b_thinking_export.yaml
 > 2026-08-28 终验：知识到位基线（净 +11 的扩量 SFT）上重启 DPO——净 -2，又冲掉近半
 > SFT 优势题（31 冲 15）。**DPO 路线封存**；增益路径回到 SFT 扩池（实测净 +11，
 > 见 train_list §13/§14，早期迭代记录已归档）。
-
-**数据覆盖 > PT > SFT >> DPO**（300 条 QA 量级实测）。DPO 起作用的前置是知识已到位；
-数据没覆盖到的条款细节，模型"不懂就编"，偏好优化只会改变编造的风格。
 
 ### 8.3 如果重来一遍
 
